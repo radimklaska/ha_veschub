@@ -50,17 +50,14 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
     if not await vesc.connect():
         raise CannotConnect
 
-    # Try to get BMS values to verify connection
-    bms_data = await vesc.get_bms_values()
+    # Connection successful - disconnect for now
+    # Note: BMS data will be fetched during normal operation
+    # No need to wait for data during setup as VESC may not be transmitting
     await vesc.disconnect()
-
-    if bms_data is None:
-        raise CannotConnect
 
     # Return info to be stored in the config entry
     return {
         "title": f"VESC Hub {data[CONF_HOST]}",
-        "bms_detected": True,
     }
 
 
