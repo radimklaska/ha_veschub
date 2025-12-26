@@ -50,8 +50,14 @@ async def async_setup_entry(
         update_interval,
     )
 
-    # Fetch initial data
-    await coordinator.async_config_entry_first_refresh()
+    # Fetch initial data (allow to fail - VESC may not be transmitting yet)
+    try:
+        await coordinator.async_config_entry_first_refresh()
+    except Exception as err:
+        _LOGGER.warning(
+            "Could not fetch initial BMS data - this is normal if VESC is not currently active. "
+            "Sensors will populate when data becomes available. Error: %s", err
+        )
 
     # Create sensors
     sensors: list[SensorEntity] = []
@@ -214,21 +220,28 @@ class VESCDataUpdateCoordinator(DataUpdateCoordinator):
         try:
             # Ensure connection
             if not self.vesc.is_connected:
+                _LOGGER.info("Connecting to VESCHub...")
                 if not await self.vesc.connect():
                     raise UpdateFailed("Failed to connect to VESCHub")
+                _LOGGER.info("Connected successfully")
 
             # Get BMS data
+            _LOGGER.debug("Requesting BMS values...")
             bms_data = await self.vesc.get_bms_values()
 
             if bms_data is None:
-                raise UpdateFailed("Failed to get BMS values")
+                _LOGGER.warning("No BMS data received - VESC may not be transmitting")
+                # Return empty data instead of failing - VESC may not be active
+                return {}
 
+            _LOGGER.debug(f"BMS data received: {len(bms_data)} fields")
             return bms_data
 
         except Exception as err:
             # Disconnect on error
             if self.vesc.is_connected:
                 await self.vesc.disconnect()
+            _LOGGER.error(f"Error during update: {err}")
             raise UpdateFailed(f"Error communicating with VESCHub: {err}") from err
 
 
