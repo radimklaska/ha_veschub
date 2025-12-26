@@ -1,0 +1,29 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "VESC Hub BMS Setup",
+        "description": "Configure connection to your VESCHub. For public VESCHub (veschub.vedder.se), provide VESC ID and password. For local VESCHub, these fields are optional.",
+        "data": {
+          "host": "Host (IP address or hostname)",
+          "port": "Port",
+          "vesc_id": "VESC ID (optional, for public hub)",
+          "password": "Password (optional, for public hub)",
+          "update_interval": "Update interval (seconds)"
+        },
+        "data_description": {
+          "host": "The hostname or IP address of your VESCHub. Default: veschub.vedder.se for public hub",
+          "vesc_id": "Your VESC identifier for authentication on public VESCHub",
+          "password": "Password for your VESC on public VESCHub"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to VESCHub. Please check your host and port settings.",
+      "unknown": "Unexpected error occurred"
+    },
+    "abort": {
+      "already_configured": "This VESCHub is already configured"
+    }
+  }
+}
