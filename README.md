@@ -83,21 +83,81 @@ This integration implements the VESC communication protocol over TCP:
 
 ## Troubleshooting
 
+### Enable Debug Logging
+
+To see detailed connection and data flow information, enable debug logging in your `configuration.yaml`:
+
+```yaml
+logger:
+  default: info
+  logs:
+    custom_components.veschub: debug
+```
+
+Then restart Home Assistant.
+
+### View Logs
+
+**Option 1: Home Assistant UI**
+1. Go to **Settings** → **System** → **Logs**
+2. Look for entries containing `custom_components.veschub`
+3. Use the search box to filter for "veschub"
+
+**Option 2: Live Log Viewing**
+```bash
+# SSH into Home Assistant
+tail -f /config/home-assistant.log | grep veschub
+```
+
+**Option 3: Download Full Log**
+1. **Settings** → **System** → **Logs**
+2. Click **Load Full Home Assistant Log**
+3. Search for "veschub"
+
+### Log Messages
+
+With debug logging enabled, you'll see:
+
+**Successful Connection:**
+```
+Connected to VESCHub at veschub.vedder.se:65101
+Authenticating with VESC ID: your-vesc-id
+Authentication completed
+```
+
+**Data Transfer:**
+```
+Sending packet: 020132161103
+Received payload: 32...
+Parsed BMS data: {'v_tot': 50.4, 'soc': 85.0, ...}
+```
+
+**Common Errors:**
+- `Failed to connect to VESCHub` - Check host/port/network
+- `Timeout waiting for response` - VESC not transmitting or disconnected
+- `CRC mismatch` - Communication error, retry or check connection
+- `Error parsing BMS values` - Firmware version mismatch or corrupt data
+
 ### Cannot Connect
 - Verify VESCHub IP address and port
 - Ensure VESCHub is powered on and connected to network
 - Check that your VESC controller is connected to the VESCHub
 - Verify firewall settings allow TCP connection to the VESCHub port
+- Check debug logs for specific error messages
 
 ### No Data / Timeout
 - Check that your VESC has a BMS connected
 - Verify the VESC firmware supports BMS commands
-- Try increasing the update interval
+- Try increasing the update interval to 30-60 seconds
+- VESC may only transmit when active (motor running, charging, etc.)
 - Check VESCHub logs for errors
+- Review debug logs to see if packets are being sent/received
 
 ### Missing Sensors
 - Cell voltage and temperature sensors are created dynamically based on your BMS configuration
 - If sensors are missing, verify your BMS is properly configured in VESC Tool
+- Check debug logs for "Parsed BMS data" to see what data is received
+- Some sensors may only appear when the VESC is actively transmitting
 
 ## Compatibility
 
