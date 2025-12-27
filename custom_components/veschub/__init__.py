@@ -24,6 +24,11 @@ PLATFORMS: list[Platform] = [Platform.SENSOR]
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up VESC Hub BMS from a config entry."""
+    # Log version for debugging
+    from .manifest import MANIFEST
+    version = MANIFEST.get("version", "unknown")
+    _LOGGER.warning(f"🚀 VESC Hub BMS Integration v{version} starting...")
+
     host = entry.data[CONF_HOST]
     port = entry.data[CONF_PORT]
     vesc_id = entry.data.get(CONF_VESC_ID)
