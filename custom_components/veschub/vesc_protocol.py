@@ -29,28 +29,32 @@ class VESCProtocol:
 
     async def connect(self) -> bool:
         """Connect to VESCHub via TCP."""
+        _LOGGER.warning(f"[CONNECT] Attempting connection to {self.host}:{self.port}")
         try:
             self.reader, self.writer = await asyncio.wait_for(
                 asyncio.open_connection(self.host, self.port),
                 timeout=10
             )
-            _LOGGER.info(f"Connected to VESCHub at {self.host}:{self.port}")
+            _LOGGER.warning(f"[CONNECT] TCP connection established to {self.host}:{self.port}")
 
             # Authenticate if credentials provided (for public VESCHub)
             if self.vesc_id and self.password:
                 auth_string = f"VESCTOOL:{self.vesc_id}:{self.password}\n"
-                _LOGGER.debug(f"Authenticating with VESC ID: {self.vesc_id}")
+                _LOGGER.warning(f"[AUTH] Sending authentication for VESC ID: {self.vesc_id}")
                 self.writer.write(auth_string.encode('utf-8'))
                 await self.writer.drain()
 
                 # Wait for authentication to process
                 await asyncio.sleep(1.0)
-                _LOGGER.info("Authentication completed")
+                _LOGGER.warning("[AUTH] Authentication sent, waiting for response")
+            else:
+                _LOGGER.warning("[CONNECT] No credentials provided, skipping authentication")
 
             self._connected = True
+            _LOGGER.warning("[CONNECT] Connection successful, marked as connected")
             return True
         except Exception as e:
-            _LOGGER.error(f"Failed to connect to VESCHub: {e}")
+            _LOGGER.error(f"[CONNECT] Failed to connect to VESCHub: {e}", exc_info=True)
             self._connected = False
             return False
 
