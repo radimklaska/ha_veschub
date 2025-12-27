@@ -226,12 +226,12 @@ class VESCDataUpdateCoordinator(DataUpdateCoordinator):
                 _LOGGER.warning("[COORDINATOR] Connection established")
 
             # NEW APPROACH: Try CAN forwarding to reach BMS on CAN device
-            # Since Express closes connection on GET_VALUES, BMS must be on CAN device
-            _LOGGER.warning("[CAN] Trying COMM_FORWARD_CAN to CAN ID 124 (motor controller)...")
+            # BMS sends data via UART to motor controller on CAN bus
+            _LOGGER.warning("[CAN] Trying COMM_FORWARD_CAN to CAN ID 84 (motor controller with BMS)...")
 
             # Build CAN forward packet: COMM_FORWARD_CAN + CAN_ID + wrapped_command
-            # CAN ID 124 is typical for first motor controller
-            can_id = 124
+            # CAN ID 84 is the motor controller receiving BMS data via UART
+            can_id = 84
             wrapped_cmd = bytes([50])  # COMM_BMS_GET_VALUES
             can_data = bytes([can_id]) + wrapped_cmd
 
