@@ -27,7 +27,7 @@ from homeassistant.helpers.update_coordinator import (
     UpdateFailed,
 )
 
-from .const import DOMAIN
+from .const import DOMAIN, COMM_FORWARD_CAN, COMM_BMS_GET_VALUES
 from .vesc_protocol import VESCProtocol
 
 _LOGGER = logging.getLogger(__name__)
@@ -232,11 +232,11 @@ class VESCDataUpdateCoordinator(DataUpdateCoordinator):
             # Build CAN forward packet: COMM_FORWARD_CAN + CAN_ID + wrapped_command
             # CAN ID 84 is the motor controller receiving BMS data via UART
             can_id = 84
-            wrapped_cmd = bytes([50])  # COMM_BMS_GET_VALUES
+            wrapped_cmd = bytes([COMM_BMS_GET_VALUES])
             can_data = bytes([can_id]) + wrapped_cmd
 
             _LOGGER.warning(f"[CAN] Forwarding BMS request to CAN ID {can_id}")
-            can_response = await self.vesc._send_command(33, can_data)  # COMM_FORWARD_CAN
+            can_response = await self.vesc._send_command(COMM_FORWARD_CAN, can_data)
 
             if can_response:
                 _LOGGER.warning(f"[CAN] Got response via CAN: {len(can_response)} bytes")
