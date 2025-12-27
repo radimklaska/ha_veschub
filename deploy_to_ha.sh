@@ -18,9 +18,10 @@ for file in ${LOCAL_PATH}/*.py ${LOCAL_PATH}/manifest.json; do
     fi
 done
 
-# Clear Python cache on remote
-echo "🗑️  Clearing Python cache..."
-ssh ${HA_HOST} "sudo rm -rf ${HA_PATH}/__pycache__"
+# Clear ALL Python cache (including parent directories)
+echo "🗑️  Clearing ALL Python cache..."
+ssh ${HA_HOST} "sudo find /config/custom_components -name '*.pyc' -delete"
+ssh ${HA_HOST} "sudo find /config/custom_components -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true"
 
 # Restart Home Assistant
 echo "🔄 Restarting Home Assistant..."
