@@ -218,12 +218,12 @@ class VESCDataUpdateCoordinator(DataUpdateCoordinator):
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from VESC BMS."""
         try:
-            # Ensure connection
+            # Ensure connection (reconnect if needed)
             if not self.vesc.is_connected:
-                _LOGGER.info("Connecting to VESCHub...")
+                _LOGGER.warning("[COORDINATOR] Not connected, attempting to connect...")
                 if not await self.vesc.connect():
                     raise UpdateFailed("Failed to connect to VESCHub")
-                _LOGGER.info("Connected successfully")
+                _LOGGER.warning("[COORDINATOR] Connection established")
 
             # TEST: Try COMM_GET_VALUES (motor/system data) - might include BMS on Express
             _LOGGER.warning("[TEST] Trying COMM_GET_VALUES (0x04) for motor/system data...")

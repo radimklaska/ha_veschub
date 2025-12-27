@@ -133,6 +133,11 @@ class VESCProtocol:
             _LOGGER.warning(f"[CMD] Response received: {len(response) if response else 0} bytes")
             return response
 
+        except (ConnectionError, BrokenPipeError, OSError) as e:
+            _LOGGER.error(f"[CMD] Connection error: {e} - marking as disconnected")
+            self._connected = False
+            await self.disconnect()
+            return None
         except asyncio.TimeoutError:
             _LOGGER.error("[CMD] Timeout waiting for response after 5 seconds")
             return None
