@@ -225,14 +225,20 @@ class VESCDataUpdateCoordinator(DataUpdateCoordinator):
                     raise UpdateFailed("Failed to connect to VESCHub")
                 _LOGGER.warning("[COORDINATOR] Connection established")
 
-            # TEST: Try COMM_GET_VALUES (motor/system data) - might include BMS on Express
-            _LOGGER.warning("[TEST] Trying COMM_GET_VALUES (0x04) for motor/system data...")
+            # THEORY: Send FW_VERSION first to "activate" VESC, then try data commands
+            _LOGGER.warning("[TEST] Sending COMM_FW_VERSION (0x00) to activate VESC...")
+            fw_resp = await self.vesc._send_command(0)
+            if fw_resp:
+                _LOGGER.warning(f"[TEST] FW_VERSION OK: {len(fw_resp)} bytes")
+
+            # Now immediately try GET_VALUES
+            _LOGGER.warning("[TEST] Now trying COMM_GET_VALUES (0x04) after activation...")
             motor_response = await self.vesc._send_command(4)  # COMM_GET_VALUES
             if motor_response:
                 _LOGGER.warning(f"[TEST] GET_VALUES response: {len(motor_response)} bytes")
                 _LOGGER.warning(f"[TEST] First 60 bytes: {motor_response[:60].hex()}")
             else:
-                _LOGGER.error("[TEST] No response to GET_VALUES command")
+                _LOGGER.error("[TEST] Still no response to GET_VALUES")
 
             # Get BMS data
             _LOGGER.warning("[BMS] Requesting BMS values with COMM_BMS_GET_VALUES (0x32)...")
