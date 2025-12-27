@@ -13,11 +13,17 @@ from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
 
 from .const import (
+    CONF_CAN_SCAN_END,
+    CONF_CAN_SCAN_START,
     CONF_PASSWORD,
+    CONF_SCAN_CAN_BUS,
     CONF_UPDATE_INTERVAL,
     CONF_VESC_ID,
+    DEFAULT_CAN_SCAN_END,
+    DEFAULT_CAN_SCAN_START,
     DEFAULT_HOST,
     DEFAULT_PORT,
+    DEFAULT_SCAN_CAN_BUS,
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
 )
@@ -33,6 +39,13 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
         vol.Optional(CONF_PASSWORD): str,
         vol.Optional(CONF_UPDATE_INTERVAL, default=DEFAULT_UPDATE_INTERVAL): vol.All(
             int, vol.Range(min=1, max=300)
+        ),
+        vol.Optional(CONF_SCAN_CAN_BUS, default=DEFAULT_SCAN_CAN_BUS): bool,
+        vol.Optional(CONF_CAN_SCAN_START, default=DEFAULT_CAN_SCAN_START): vol.All(
+            int, vol.Range(min=0, max=253)
+        ),
+        vol.Optional(CONF_CAN_SCAN_END, default=DEFAULT_CAN_SCAN_END): vol.All(
+            int, vol.Range(min=0, max=253)
         ),
     }
 )

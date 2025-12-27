@@ -9,9 +9,15 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import (
+    CONF_CAN_SCAN_END,
+    CONF_CAN_SCAN_START,
     CONF_PASSWORD,
+    CONF_SCAN_CAN_BUS,
     CONF_UPDATE_INTERVAL,
     CONF_VESC_ID,
+    DEFAULT_CAN_SCAN_END,
+    DEFAULT_CAN_SCAN_START,
+    DEFAULT_SCAN_CAN_BUS,
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
 )
@@ -34,6 +40,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     vesc_id = entry.data.get(CONF_VESC_ID)
     password = entry.data.get(CONF_PASSWORD)
     update_interval = entry.data.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL)
+    scan_can_bus = entry.data.get(CONF_SCAN_CAN_BUS, DEFAULT_SCAN_CAN_BUS)
+    can_scan_start = entry.data.get(CONF_CAN_SCAN_START, DEFAULT_CAN_SCAN_START)
+    can_scan_end = entry.data.get(CONF_CAN_SCAN_END, DEFAULT_CAN_SCAN_END)
 
     # Create VESC protocol instance
     vesc = VESCProtocol(host, port, vesc_id, password)
@@ -52,6 +61,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "host": host,
         "port": port,
         "update_interval": update_interval,
+        "scan_can_bus": scan_can_bus,
+        "can_scan_start": can_scan_start,
+        "can_scan_end": can_scan_end,
     }
 
     # Forward setup to sensor platform

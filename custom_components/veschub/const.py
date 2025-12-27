@@ -8,11 +8,18 @@ CONF_PORT = "port"
 CONF_VESC_ID = "vesc_id"
 CONF_PASSWORD = "password"
 CONF_UPDATE_INTERVAL = "update_interval"
+CONF_CAN_SCAN_START = "can_scan_start"
+CONF_CAN_SCAN_END = "can_scan_end"
+CONF_SCAN_CAN_BUS = "scan_can_bus"
 
 # Defaults
 DEFAULT_HOST = "veschub.vedder.se"
 DEFAULT_PORT = 65101
 DEFAULT_UPDATE_INTERVAL = 5  # seconds
+DEFAULT_CAN_SCAN_START = 0  # Start of CAN ID range
+DEFAULT_CAN_SCAN_END = 100  # End of CAN ID range (0-253 valid, 254 broadcast)
+                            # With 1s timeout per ID, this takes max ~100s
+DEFAULT_SCAN_CAN_BUS = True  # Scan CAN bus by default
 
 # VESC Protocol Constants
 VESC_PACKET_START_BYTE = 0x02
@@ -22,8 +29,8 @@ VESC_PACKET_TERMINATOR = 0x03
 # VESC Commands
 COMM_FW_VERSION = 0
 COMM_GET_VALUES = 4
-COMM_FORWARD_CAN = 33
-COMM_BMS_GET_VALUES = 50
+COMM_FORWARD_CAN = 34  # Fixed: was 33
+COMM_BMS_GET_VALUES = 96  # Fixed: was 50
 COMM_BMS_SET_CHARGE_ALLOWED = 51
 COMM_BMS_SET_BALANCE_OVERRIDE = 52
 COMM_BMS_RESET_COUNTERS = 53
