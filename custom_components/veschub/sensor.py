@@ -225,23 +225,29 @@ class VESCDataUpdateCoordinator(DataUpdateCoordinator):
                     raise UpdateFailed("Failed to connect to VESCHub")
                 _LOGGER.warning("[COORDINATOR] Connection established")
 
-            # THEORY: Send FW_VERSION first to "activate" VESC, then try data commands
-            _LOGGER.warning("[TEST] Sending COMM_FW_VERSION (0x00) to activate VESC...")
-            fw_resp = await self.vesc._send_command(0)
-            if fw_resp:
-                _LOGGER.warning(f"[TEST] FW_VERSION OK: {len(fw_resp)} bytes")
+            # NEW APPROACH: Try CAN forwarding to reach BMS on CAN device
+            # Since Express closes connection on GET_VALUES, BMS must be on CAN device
+            _LOGGER.warning("[CAN] Trying COMM_FORWARD_CAN to CAN ID 124 (motor controller)...")
 
-            # Now immediately try GET_VALUES
-            _LOGGER.warning("[TEST] Now trying COMM_GET_VALUES (0x04) after activation...")
-            motor_response = await self.vesc._send_command(4)  # COMM_GET_VALUES
-            if motor_response:
-                _LOGGER.warning(f"[TEST] GET_VALUES response: {len(motor_response)} bytes")
-                _LOGGER.warning(f"[TEST] First 60 bytes: {motor_response[:60].hex()}")
+            # Build CAN forward packet: COMM_FORWARD_CAN + CAN_ID + wrapped_command
+            # CAN ID 124 is typical for first motor controller
+            can_id = 124
+            wrapped_cmd = bytes([50])  # COMM_BMS_GET_VALUES
+            can_data = bytes([can_id]) + wrapped_cmd
+
+            _LOGGER.warning(f"[CAN] Forwarding BMS request to CAN ID {can_id}")
+            can_response = await self.vesc._send_command(33, can_data)  # COMM_FORWARD_CAN
+
+            if can_response:
+                _LOGGER.warning(f"[CAN] Got response via CAN: {len(can_response)} bytes")
+                _LOGGER.warning(f"[CAN] Response hex: {can_response.hex()}")
+                # Try to parse as BMS data
+                # Response format should be: [COMM_FORWARD_CAN][data from CAN device]
             else:
-                _LOGGER.error("[TEST] Still no response to GET_VALUES")
+                _LOGGER.error("[CAN] No response from CAN forwarding")
 
-            # Get BMS data
-            _LOGGER.warning("[BMS] Requesting BMS values with COMM_BMS_GET_VALUES (0x32)...")
+            # Get BMS data (will still fail, but keeping for now)
+            _LOGGER.warning("[BMS] Requesting BMS values directly (will likely fail)...")
             bms_data = await self.vesc.get_bms_values()
 
             if bms_data is None:
