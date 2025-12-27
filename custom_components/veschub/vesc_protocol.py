@@ -111,7 +111,7 @@ class VESCProtocol:
     async def _send_command(self, command: int, data: bytes = b'') -> Optional[bytes]:
         """Send a command to VESC and wait for response."""
         if not self._connected or not self.writer or not self.reader:
-            _LOGGER.error("Not connected to VESCHub")
+            _LOGGER.error("[CMD] Not connected to VESCHub")
             return None
 
         try:
@@ -119,9 +119,10 @@ class VESCProtocol:
             payload = bytes([command]) + data
             packet = self._pack_payload(payload)
 
-            _LOGGER.debug(f"Sending packet: {packet.hex()}")
+            _LOGGER.warning(f"[CMD] Sending command {command} (0x{command:02x}), packet: {packet.hex()}")
             self.writer.write(packet)
             await self.writer.drain()
+            _LOGGER.warning("[CMD] Packet sent, waiting for response...")
 
             # Read response with timeout
             response = await asyncio.wait_for(
@@ -129,13 +130,14 @@ class VESCProtocol:
                 timeout=5.0
             )
 
+            _LOGGER.warning(f"[CMD] Response received: {len(response) if response else 0} bytes")
             return response
 
         except asyncio.TimeoutError:
-            _LOGGER.error("Timeout waiting for response")
+            _LOGGER.error("[CMD] Timeout waiting for response after 5 seconds")
             return None
         except Exception as e:
-            _LOGGER.error(f"Error sending command: {e}")
+            _LOGGER.error(f"[CMD] Error sending command: {e}", exc_info=True)
             return None
 
     async def _read_packet(self) -> Optional[bytes]:
