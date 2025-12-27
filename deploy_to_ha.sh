@@ -22,14 +22,15 @@ done
 echo "🗑️  Clearing Python cache..."
 ssh ${HA_HOST} "sudo rm -rf ${HA_PATH}/__pycache__"
 
-# Restart HA - we'll restart integration instead of full HA restart
-echo "✅ Files deployed!"
+# Restart Home Assistant
+echo "🔄 Restarting Home Assistant..."
+ssh ${HA_HOST} "bash -l -c 'ha core restart'"
+
+echo "✅ Deployment complete!"
 echo ""
-echo "⚠️  Please restart the VESC Hub integration in HA UI:"
-echo "   Settings → Devices & Services → VESC Hub → ⋮ → Reload"
-echo ""
-echo "Or restart Home Assistant manually if needed."
+echo "Waiting 40 seconds for HA to restart..."
+sleep 40
 echo ""
 echo "📋 Tailing logs (Ctrl+C to stop)..."
 echo "---"
-ssh ${HA_HOST} "tail -f /config/home-assistant.log | grep --line-buffered veschub"
+ssh ${HA_HOST} "sudo docker logs -f homeassistant 2>&1 | grep veschub"
