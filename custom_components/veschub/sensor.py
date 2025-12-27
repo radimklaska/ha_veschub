@@ -225,8 +225,16 @@ class VESCDataUpdateCoordinator(DataUpdateCoordinator):
                     raise UpdateFailed("Failed to connect to VESCHub")
                 _LOGGER.info("Connected successfully")
 
+            # TEST: Try getting firmware version first to verify VESC responds
+            _LOGGER.warning("[TEST] Trying COMM_FW_VERSION (0x00) first...")
+            fw_response = await self.vesc._send_command(0)  # COMM_FW_VERSION
+            if fw_response:
+                _LOGGER.warning(f"[TEST] FW_VERSION response: {len(fw_response)} bytes: {fw_response.hex()}")
+            else:
+                _LOGGER.error("[TEST] No response to FW_VERSION command")
+
             # Get BMS data
-            _LOGGER.debug("Requesting BMS values...")
+            _LOGGER.warning("[BMS] Requesting BMS values with COMM_BMS_GET_VALUES (0x32)...")
             bms_data = await self.vesc.get_bms_values()
 
             if bms_data is None:
