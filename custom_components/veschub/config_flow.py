@@ -172,11 +172,17 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         current_can_ids = self.config_entry.data.get(CONF_CAN_ID_LIST, DEFAULT_CAN_ID_LIST)
         current_interval = self.config_entry.data.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL)
 
-        # Get discovered devices from coordinator
-        coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id].get("coordinator")
+        # Get discovered devices from coordinator (if available)
         discovered_can_ids = []
-        if coordinator:
-            discovered_can_ids = sorted(list(coordinator.discovered_devices.keys()))
+        try:
+            if DOMAIN in self.hass.data and self.config_entry.entry_id in self.hass.data[DOMAIN]:
+                entry_data = self.hass.data[DOMAIN][self.config_entry.entry_id]
+                coordinator = entry_data.get("coordinator")
+                if coordinator and hasattr(coordinator, "discovered_devices"):
+                    discovered_can_ids = sorted(list(coordinator.discovered_devices.keys()))
+        except Exception:
+            # Coordinator not ready yet, that's ok
+            pass
 
         return self.async_show_form(
             step_id="init",
