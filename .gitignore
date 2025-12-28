@@ -56,3 +56,7 @@ home-assistant.log
 home-assistant_v2.db
 *.db-shm
 *.db-wal
+
+# Environment variables and credentials
+.env
+exploration_notes.md
