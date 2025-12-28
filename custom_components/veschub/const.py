@@ -8,17 +8,15 @@ CONF_PORT = "port"
 CONF_VESC_ID = "vesc_id"
 CONF_PASSWORD = "password"
 CONF_UPDATE_INTERVAL = "update_interval"
-CONF_CAN_SCAN_START = "can_scan_start"
-CONF_CAN_SCAN_END = "can_scan_end"
+CONF_CAN_ID_LIST = "can_id_list"  # List[int] - monitored CAN IDs
+CONF_INITIAL_SCAN_DONE = "initial_scan_done"  # bool - tracks if full scan completed
 CONF_SCAN_CAN_BUS = "scan_can_bus"
 
 # Defaults
 DEFAULT_HOST = "veschub.vedder.se"
 DEFAULT_PORT = 65101
 DEFAULT_UPDATE_INTERVAL = 5  # seconds
-DEFAULT_CAN_SCAN_START = 0  # Start of CAN ID range
-DEFAULT_CAN_SCAN_END = 100  # End of CAN ID range (0-253 valid, 254 broadcast)
-                            # With 1s timeout per ID, this takes max ~100s
+DEFAULT_CAN_ID_LIST = [0, 255]  # Local VESC + broadcast address
 DEFAULT_SCAN_CAN_BUS = True  # Scan CAN bus by default
 
 # VESC Protocol Constants

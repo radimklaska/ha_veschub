@@ -9,12 +9,15 @@
           "port": "Port",
           "vesc_id": "VESC ID (optional, for public hub)",
           "password": "Password (optional, for public hub)",
-          "update_interval": "Update interval (seconds)"
+          "update_interval": "Update interval (seconds)",
+          "scan_can_bus": "Scan CAN bus for devices",
+          "can_id_hint": "Initial CAN IDs (optional, e.g., 0,84,124)"
         },
         "data_description": {
           "host": "The hostname or IP address of your VESCHub. Default: veschub.vedder.se for public hub",
           "vesc_id": "Your VESC identifier for authentication on public VESCHub",
-          "password": "Password for your VESC on public VESCHub"
+          "password": "Password for your VESC on public VESCHub",
+          "can_id_hint": "Comma-separated list of CAN IDs to monitor initially. Leave empty for automatic full scan (0-254) on first startup."
         }
       }
     },
@@ -24,6 +27,23 @@
     },
     "abort": {
       "already_configured": "This VESCHub is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "VESC Hub BMS Options",
+        "description": "Discovered devices: {discovered_devices}\nCurrently monitored: {current_monitored}",
+        "data": {
+          "update_interval": "Update interval (seconds)",
+          "can_id_list_str": "Monitored CAN IDs (comma-separated)",
+          "trigger_full_scan": "Perform full CAN scan (0-254)"
+        },
+        "data_description": {
+          "can_id_list_str": "List of CAN IDs to monitor. Example: 0,84,124",
+          "trigger_full_scan": "Check to re-discover all CAN devices. Integration will reload (takes 2-4 minutes)."
+        }
+      }
     }
   }
 }

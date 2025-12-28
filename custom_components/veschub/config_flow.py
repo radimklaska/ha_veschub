@@ -8,19 +8,18 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST, CONF_PORT
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
 
 from .const import (
-    CONF_CAN_SCAN_END,
-    CONF_CAN_SCAN_START,
+    CONF_CAN_ID_LIST,
+    CONF_INITIAL_SCAN_DONE,
     CONF_PASSWORD,
     CONF_SCAN_CAN_BUS,
     CONF_UPDATE_INTERVAL,
     CONF_VESC_ID,
-    DEFAULT_CAN_SCAN_END,
-    DEFAULT_CAN_SCAN_START,
+    DEFAULT_CAN_ID_LIST,
     DEFAULT_HOST,
     DEFAULT_PORT,
     DEFAULT_SCAN_CAN_BUS,
@@ -41,12 +40,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
             int, vol.Range(min=1, max=300)
         ),
         vol.Optional(CONF_SCAN_CAN_BUS, default=DEFAULT_SCAN_CAN_BUS): bool,
-        vol.Optional(CONF_CAN_SCAN_START, default=DEFAULT_CAN_SCAN_START): vol.All(
-            int, vol.Range(min=0, max=253)
-        ),
-        vol.Optional(CONF_CAN_SCAN_END, default=DEFAULT_CAN_SCAN_END): vol.All(
-            int, vol.Range(min=0, max=253)
-        ),
+        vol.Optional("can_id_hint", default=""): str,  # Optional: "0,84,124"
     }
 )
 
@@ -79,6 +73,12 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: config_entries.ConfigEntry) -> "OptionsFlowHandler":
+        """Get the options flow for this handler."""
+        return OptionsFlowHandler(config_entry)
+
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
@@ -86,6 +86,23 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
+            # Parse CAN ID hint if provided
+            can_id_hint = user_input.pop("can_id_hint", "")
+            if can_id_hint:
+                try:
+                    can_id_list = sorted(set(
+                        int(x.strip())
+                        for x in can_id_hint.split(",")
+                        if x.strip().isdigit() and 0 <= int(x.strip()) <= 253
+                    ))
+                except ValueError:
+                    can_id_list = DEFAULT_CAN_ID_LIST.copy()
+            else:
+                can_id_list = DEFAULT_CAN_ID_LIST.copy()
+
+            user_input[CONF_CAN_ID_LIST] = can_id_list
+            user_input[CONF_INITIAL_SCAN_DONE] = False  # Trigger full scan
+
             try:
                 info = await validate_input(self.hass, user_input)
             except CannotConnect:
@@ -111,3 +128,71 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 class CannotConnect(HomeAssistantError):
     """Error to indicate we cannot connect."""
+
+
+class OptionsFlowHandler(config_entries.OptionsFlow):
+    """Handle options flow for VESC Hub BMS."""
+
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+        """Initialize options flow."""
+        self.config_entry = config_entry
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Manage the options."""
+        if user_input is not None:
+            # Parse CAN ID list from comma-separated string
+            can_id_str = user_input.get("can_id_list_str", "")
+            can_id_list = sorted(set(
+                int(x.strip())
+                for x in can_id_str.split(",")
+                if x.strip().isdigit() and 0 <= int(x.strip()) <= 253
+            ))
+
+            # Update entry.data (not entry.options)
+            new_data = {**self.config_entry.data}
+            new_data[CONF_UPDATE_INTERVAL] = user_input[CONF_UPDATE_INTERVAL]
+            new_data[CONF_CAN_ID_LIST] = can_id_list
+
+            # Trigger full scan if requested
+            if user_input.get("trigger_full_scan"):
+                new_data[CONF_INITIAL_SCAN_DONE] = False
+
+            self.hass.config_entries.async_update_entry(
+                self.config_entry, data=new_data
+            )
+
+            # Reload integration to apply changes
+            await self.hass.config_entries.async_reload(self.config_entry.entry_id)
+
+            return self.async_create_entry(title="", data={})
+
+        # Get current values
+        current_can_ids = self.config_entry.data.get(CONF_CAN_ID_LIST, DEFAULT_CAN_ID_LIST)
+        current_interval = self.config_entry.data.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL)
+
+        # Get discovered devices from coordinator
+        coordinator = self.hass.data[DOMAIN][self.config_entry.entry_id].get("coordinator")
+        discovered_can_ids = []
+        if coordinator:
+            discovered_can_ids = sorted(list(coordinator.discovered_devices.keys()))
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema({
+                vol.Optional(
+                    CONF_UPDATE_INTERVAL,
+                    default=current_interval
+                ): vol.All(int, vol.Range(min=1, max=300)),
+                vol.Optional(
+                    "can_id_list_str",
+                    default=",".join(str(x) for x in current_can_ids)
+                ): str,
+                vol.Optional("trigger_full_scan", default=False): bool,
+            }),
+            description_placeholders={
+                "discovered_devices": ", ".join(str(x) for x in discovered_can_ids) if discovered_can_ids else "None",
+                "current_monitored": ", ".join(str(x) for x in current_can_ids),
+            }
+        )

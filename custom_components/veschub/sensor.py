@@ -43,8 +43,8 @@ async def async_setup_entry(
     vesc: VESCProtocol = data["vesc"]
     update_interval = data["update_interval"]
     scan_can_bus = data.get("scan_can_bus", True)
-    can_scan_start = data.get("can_scan_start", 0)
-    can_scan_end = data.get("can_scan_end", 127)
+    can_id_list = data.get("can_id_list", [0, 255])
+    initial_scan_done = data.get("initial_scan_done", False)
 
     # Create data update coordinator
     coordinator = VESCDataUpdateCoordinator(
@@ -52,9 +52,12 @@ async def async_setup_entry(
         vesc,
         update_interval,
         scan_can_bus,
-        can_scan_start,
-        can_scan_end,
+        can_id_list,
+        initial_scan_done,
     )
+
+    # Store coordinator for options flow and background scan access
+    hass.data[DOMAIN][entry.entry_id]["coordinator"] = coordinator
 
     # Discover CAN devices first
     try:
@@ -195,14 +198,14 @@ class VESCDataUpdateCoordinator(DataUpdateCoordinator):
         vesc: VESCProtocol,
         update_interval: int,
         scan_can_bus: bool = True,
-        can_scan_start: int = 0,
-        can_scan_end: int = 127,
+        can_id_list: list[int] | None = None,
+        initial_scan_done: bool = False,
     ) -> None:
         """Initialize."""
         self.vesc = vesc
         self.scan_can_bus = scan_can_bus
-        self.can_scan_start = can_scan_start
-        self.can_scan_end = can_scan_end
+        self.can_id_list = can_id_list or [0, 255]
+        self.initial_scan_done = initial_scan_done
         self.discovered_devices: dict[int, dict[str, Any]] = {}  # CAN ID -> device info
         super().__init__(
             hass,
@@ -211,114 +214,125 @@ class VESCDataUpdateCoordinator(DataUpdateCoordinator):
             update_interval=timedelta(seconds=update_interval),
         )
 
-    async def discover_can_devices(self) -> None:
-        """Discover CAN devices by scanning CAN IDs."""
+    async def discover_can_devices(self, full_scan: bool = False) -> dict[int, dict[str, Any]]:
+        """Discover CAN devices - returns newly found devices.
+
+        Args:
+            full_scan: If True, scan all CAN IDs (0-254). If False, scan only configured list.
+        """
         _LOGGER.warning("[DISC] Starting device discovery...")
+        newly_discovered = {}
 
         # Ensure we're connected before discovery
         if not self.vesc.is_connected:
-            _LOGGER.warning("[DISC] Not connected, connecting before discovery...")
+            _LOGGER.warning("[DISC] Not connected, connecting...")
             if not await self.vesc.connect():
-                _LOGGER.warning("[DISC] Failed to connect for discovery")
-                return
+                _LOGGER.warning("[DISC] Failed to connect")
+                return newly_discovered
+
+        # Determine scan range
+        if full_scan:
+            # FULL SCAN: All valid CAN IDs (0-254)
+            scan_ids = range(0, 255)
+            _LOGGER.warning("[DISC] Performing FULL CAN bus scan (0-254). This may take 2-4 minutes...")
+        else:
+            # LIST-BASED SCAN: Only monitored IDs
+            scan_ids = self.can_id_list
+            _LOGGER.warning(f"[DISC] Scanning monitored CAN IDs: {scan_ids}")
 
         # Scan CAN bus if enabled
         if self.scan_can_bus:
-            _LOGGER.warning(f"[DISC] Scanning CAN IDs {self.can_scan_start}-{self.can_scan_end}...")
+            total_ids = len(list(scan_ids))
+            scanned = 0
 
-            for can_id in range(self.can_scan_start, self.can_scan_end + 1):
+            for can_id in scan_ids:
+                scanned += 1
+
+                # Progress logging (every 25 IDs for full scan)
+                if full_scan and scanned % 25 == 0:
+                    _LOGGER.warning(f"[DISC] Scan progress: {scanned}/{total_ids} CAN IDs checked...")
                 try:
-                    # Reconnect if needed (timeouts may disconnect us)
+                    # Reconnect if needed (timeouts may disconnect)
                     if not self.vesc.is_connected:
-                        _LOGGER.debug(f"Reconnecting before scanning CAN ID {can_id}...")
                         if not await self.vesc.connect():
-                            _LOGGER.warning(f"Failed to reconnect during discovery at CAN ID {can_id}")
                             continue
 
-                    # Try to get firmware version from this CAN ID (use 1s timeout for faster discovery)
+                    # Query device firmware
                     wrapped_cmd = bytes([0])  # COMM_FW_VERSION
                     can_data = bytes([can_id]) + wrapped_cmd
                     response = await self.vesc._send_command(COMM_FORWARD_CAN, can_data, timeout=1.0)
 
-                    if response:
-                        _LOGGER.warning(f"[DISC] CAN ID {can_id} response: {len(response)} bytes - {response[:20].hex() if len(response) > 20 else response.hex()}")
-
                     if response and len(response) > 2:
-                        # Device responded! Parse the response
-                        # COMM_FORWARD_CAN returns raw CAN device response: [COMM_FW_VERSION=0][fw_major][fw_minor][name...]
-                        device_info = {
-                            "can_id": can_id,
-                            "online": True,
-                        }
-
-                        # Parse firmware version from CAN response
-                        fw_major = response[1] if len(response) > 1 else 0
-                        fw_minor = response[2] if len(response) > 2 else 0
-
-                        # Try to extract firmware name (starts at byte 3)
-                        name_start = 3
-                        name_bytes = []
-                        for i in range(name_start, min(len(response), 35)):
-                            if response[i] == 0:
-                                break
-                            if 32 <= response[i] <= 126:  # Printable ASCII
-                                name_bytes.append(response[i])
-
-                        fw_name = bytes(name_bytes).decode('ascii', errors='ignore') if name_bytes else f"CAN Device {can_id}"
-
-                        device_info["firmware_version"] = f"{fw_major}.{fw_minor:02d}"
-                        device_info["firmware_name"] = fw_name
-
+                        # Parse firmware response
+                        device_info = self._parse_fw_response(response, can_id)
                         self.discovered_devices[can_id] = device_info
-                        _LOGGER.warning(f"[DISC] Discovered CAN device at ID {can_id}: {fw_name} v{fw_major}.{fw_minor}")
+                        newly_discovered[can_id] = device_info
 
-                except Exception as e:
-                    # No response or error - device not present at this ID
+                        _LOGGER.warning(
+                            f"[DISC] Discovered CAN ID {can_id}: "
+                            f"{device_info.get('firmware_name', 'Unknown')} "
+                            f"v{device_info.get('firmware_version', '?')}"
+                        )
+                except Exception:
+                    # Device not present, timeout, or error - continue scanning
                     continue
 
-        # Always detect the directly connected VESC controller
-        # This is the controller we're connected to via TCP (not through CAN forwarding)
-        # Assign it to CAN ID 0 if not already discovered via CAN scan
-        try:
-            if 0 not in self.discovered_devices:
-                # Ensure fresh connection after CAN scan (which may have caused disconnects)
+        # Always ensure local VESC (CAN ID 0) is discovered
+        if 0 not in self.discovered_devices:
+            try:
                 if not self.vesc.is_connected:
                     _LOGGER.warning("[DISC] Reconnecting before detecting local VESC...")
                     if not await self.vesc.connect():
-                        _LOGGER.warning("[DISC] Failed to reconnect for local VESC detection")
                         raise Exception("Could not connect for local VESC detection")
 
                 _LOGGER.warning("[DISC] Querying local VESC controller (CAN ID 0)...")
                 fw_response = await self.vesc._send_command(0)  # Direct COMM_FW_VERSION
                 _LOGGER.warning(f"[DISC] Local VESC response: {len(fw_response) if fw_response else 0} bytes")
+
                 if fw_response and len(fw_response) > 2:
-                    fw_major = fw_response[1]
-                    fw_minor = fw_response[2]
+                    device_info = self._parse_fw_response(fw_response, 0)
+                    device_info["is_local"] = True
+                    self.discovered_devices[0] = device_info
+                    newly_discovered[0] = device_info
 
-                    name_start = 3
-                    name_bytes = []
-                    for i in range(name_start, min(len(fw_response), 30)):
-                        if fw_response[i] == 0:
-                            break
-                        if 32 <= fw_response[i] <= 126:
-                            name_bytes.append(fw_response[i])
-
-                    fw_name = bytes(name_bytes).decode('ascii', errors='ignore') if name_bytes else "VESC"
-
-                    self.discovered_devices[0] = {
-                        "can_id": 0,  # Local controller at CAN ID 0
-                        "online": True,
-                        "firmware_version": f"{fw_major}.{fw_minor:02d}",
-                        "firmware_name": fw_name,
-                        "is_local": True,  # This is the directly connected controller
-                    }
-                    _LOGGER.warning(f"[DISC] Local VESC controller: {fw_name} v{fw_major}.{fw_minor}")
+                    _LOGGER.warning(
+                        f"[DISC] Local VESC controller: "
+                        f"{device_info.get('firmware_name')} "
+                        f"v{device_info.get('firmware_version')}"
+                    )
                 else:
-                    _LOGGER.warning(f"[DISC] Invalid firmware response from local VESC (too short or empty)")
-        except Exception as e:
-            _LOGGER.warning(f"[DISC] Could not get local VESC info: {e}")
+                    _LOGGER.warning("[DISC] Invalid firmware response from local VESC")
+            except Exception as e:
+                _LOGGER.warning(f"[DISC] Could not detect local VESC: {e}")
 
-        _LOGGER.warning(f"[DISC] Device discovery complete. Found {len(self.discovered_devices)} device(s)")
+        _LOGGER.warning(
+            f"[DISC] Discovery complete. Found {len(newly_discovered)} new device(s), "
+            f"total {len(self.discovered_devices)} device(s)"
+        )
+
+        return newly_discovered
+
+    def _parse_fw_response(self, response: bytes, can_id: int) -> dict[str, Any]:
+        """Parse firmware version response into device info."""
+        fw_major = response[1] if len(response) > 1 else 0
+        fw_minor = response[2] if len(response) > 2 else 0
+
+        # Extract firmware name (printable ASCII, null-terminated)
+        name_bytes = []
+        for i in range(3, min(len(response), 35)):
+            if response[i] == 0:
+                break
+            if 32 <= response[i] <= 126:
+                name_bytes.append(response[i])
+
+        fw_name = bytes(name_bytes).decode('ascii', errors='ignore') if name_bytes else f"CAN Device {can_id}"
+
+        return {
+            "can_id": can_id,
+            "online": True,
+            "firmware_version": f"{fw_major}.{fw_minor:02d}",
+            "firmware_name": fw_name,
+        }
 
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data for all discovered devices."""
@@ -463,6 +477,15 @@ class VESCDeviceSensor(CoordinatorEntity, SensorEntity):
         )
 
     @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        if self.coordinator.data is None:
+            return False
+
+        device_data = self.coordinator.data.get(self._can_id, {})
+        return device_data.get("online", False)
+
+    @property
     def native_value(self) -> float | int | str | None:
         """Return the state of the sensor."""
         if self.coordinator.data is None:
@@ -471,6 +494,27 @@ class VESCDeviceSensor(CoordinatorEntity, SensorEntity):
         # Get data for this specific CAN device
         device_data = self.coordinator.data.get(self._can_id, {})
         return device_data.get(self._data_key)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return entity specific state attributes."""
+        if self.coordinator.data is None:
+            return None
+
+        device_data = self.coordinator.data.get(self._can_id, {})
+
+        attrs = {
+            "can_id": self._can_id,
+            "online": device_data.get("online", False),
+        }
+
+        if fw_version := device_data.get("firmware_version"):
+            attrs["firmware_version"] = fw_version
+
+        if fw_name := device_data.get("firmware_name"):
+            attrs["firmware_name"] = fw_name
+
+        return attrs
 
 
 class VESCCellVoltageSensor(CoordinatorEntity, SensorEntity):

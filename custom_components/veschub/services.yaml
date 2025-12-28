@@ -1,0 +1,6 @@
+rescan_can_bus:
+  name: Rescan CAN Bus
+  description: Perform a full scan of the CAN bus (0-254) to discover new devices. The integration will reload to add newly discovered devices.
+  target:
+    integration: veschub
+  fields: {}
