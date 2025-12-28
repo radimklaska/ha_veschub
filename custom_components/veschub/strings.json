@@ -17,7 +17,7 @@
           "host": "The hostname or IP address of your VESCHub. Default: veschub.vedder.se for public hub",
           "vesc_id": "Your VESC identifier for authentication on public VESCHub",
           "password": "Password for your VESC on public VESCHub",
-          "can_id_hint": "Comma-separated list of CAN IDs to monitor initially. Leave empty for automatic full scan (0-254) on first startup."
+          "can_id_hint": "Optional: Specify CAN IDs (e.g., 0,84,124) to make available immediately during setup. A full background scan (0-254) will run automatically after setup to discover all devices. Leave empty to start with defaults [0, 255]."
         }
       }
     },
