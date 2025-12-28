@@ -86,17 +86,6 @@ async def async_setup_entry(
                 coordinator,
                 entry,
                 can_id,
-                "firmware_version",
-                "Firmware Version",
-                None,
-                None,
-                None,
-                "mdi:chip",
-            ),
-            VESCDeviceSensor(
-                coordinator,
-                entry,
-                can_id,
                 "firmware_name",
                 "Firmware Name",
                 None,
@@ -116,6 +105,78 @@ async def async_setup_entry(
                 "mdi:connection",
             ),
         ])
+
+        # Add BMS sensors for CAN ID 0 (VESC Express with BMS)
+        if can_id == 0:
+            _LOGGER.info(f"Adding BMS sensors for {device_name}")
+
+            # Main BMS sensors
+            sensors.extend([
+                VESCDeviceSensor(
+                    coordinator, entry, can_id,
+                    "v_tot", "Battery Voltage",
+                    UnitOfElectricPotential.VOLT,
+                    SensorDeviceClass.VOLTAGE,
+                    SensorStateClass.MEASUREMENT,
+                    "mdi:battery",
+                ),
+                VESCDeviceSensor(
+                    coordinator, entry, can_id,
+                    "i_in", "Battery Current",
+                    UnitOfElectricCurrent.AMPERE,
+                    SensorDeviceClass.CURRENT,
+                    SensorStateClass.MEASUREMENT,
+                    "mdi:current-dc",
+                ),
+                VESCDeviceSensor(
+                    coordinator, entry, can_id,
+                    "soc", "State of Charge",
+                    PERCENTAGE,
+                    SensorDeviceClass.BATTERY,
+                    SensorStateClass.MEASUREMENT,
+                    "mdi:battery-50",
+                ),
+                VESCDeviceSensor(
+                    coordinator, entry, can_id,
+                    "cell_min", "Cell Min Voltage",
+                    UnitOfElectricPotential.VOLT,
+                    SensorDeviceClass.VOLTAGE,
+                    SensorStateClass.MEASUREMENT,
+                    "mdi:battery-minus",
+                ),
+                VESCDeviceSensor(
+                    coordinator, entry, can_id,
+                    "cell_max", "Cell Max Voltage",
+                    UnitOfElectricPotential.VOLT,
+                    SensorDeviceClass.VOLTAGE,
+                    SensorStateClass.MEASUREMENT,
+                    "mdi:battery-plus",
+                ),
+                VESCDeviceSensor(
+                    coordinator, entry, can_id,
+                    "cell_delta", "Cell Delta",
+                    UnitOfElectricPotential.VOLT,
+                    SensorDeviceClass.VOLTAGE,
+                    SensorStateClass.MEASUREMENT,
+                    "mdi:delta",
+                ),
+                VESCDeviceSensor(
+                    coordinator, entry, can_id,
+                    "ah_cnt", "Amp Hours Used",
+                    "Ah",
+                    None,
+                    SensorStateClass.TOTAL_INCREASING,
+                    "mdi:counter",
+                ),
+                VESCDeviceSensor(
+                    coordinator, entry, can_id,
+                    "wh_cnt", "Watt Hours Used",
+                    UnitOfEnergy.WATT_HOUR,
+                    SensorDeviceClass.ENERGY,
+                    SensorStateClass.TOTAL_INCREASING,
+                    "mdi:lightning-bolt",
+                ),
+            ])
 
         _LOGGER.info(f"Created sensors for device: {device_name} (CAN ID {can_id})")
 
@@ -267,29 +328,28 @@ class VESCDataUpdateCoordinator(DataUpdateCoordinator):
 
                 try:
                     if can_id == 0:
-                        # Local VESC controller - use direct command (not CAN forwarding)
-                        fw_response = await self.vesc._send_command(0)  # COMM_FW_VERSION
-                        if fw_response and len(fw_response) > 2:
-                            fw_major = fw_response[1]
-                            fw_minor = fw_response[2]
+                        # Local VESC controller - use rapid-fire BMS retrieval
+                        _LOGGER.debug("[UPDATE] Fetching BMS data for local VESC Express...")
 
-                            name_start = 3
-                            name_bytes = []
-                            for i in range(name_start, min(len(fw_response), 30)):
-                                if fw_response[i] == 0:
-                                    break
-                                if 32 <= fw_response[i] <= 126:
-                                    name_bytes.append(fw_response[i])
+                        bms_data = await self.vesc.get_bms_values_rapid()
 
-                            fw_name = bytes(name_bytes).decode('ascii', errors='ignore') if name_bytes else "VESC Express"
+                        if bms_data:
+                            _LOGGER.info(f"[UPDATE] BMS data retrieved: {bms_data.get('cell_num', 0)} cells, {bms_data.get('v_tot', 0):.2f}V total")
 
                             device_data = {
-                                "firmware_version": f"{fw_major}.{fw_minor:02d}",
-                                "firmware_name": fw_name,
+                                "firmware_name": "VESC Express",
                                 "online": True,
+                                # BMS data
+                                "bms_available": True,
+                                **bms_data,  # Include all BMS data
                             }
                         else:
-                            device_data = {"online": False}
+                            _LOGGER.debug("[UPDATE] No BMS data received")
+                            device_data = {
+                                "firmware_name": "VESC Express",
+                                "online": True,
+                                "bms_available": False,
+                            }
 
                     else:
                         # CAN device - use COMM_FORWARD_CAN

@@ -6,7 +6,10 @@ from typing import Optional
 
 from .const import (
     COMM_BMS_GET_VALUES,
+    COMM_FW_VERSION,
+    COMM_GET_CUSTOM_CONFIG,
     COMM_GET_VALUES,
+    COMM_PING_CAN,
     VESC_PACKET_START_BYTE,
     VESC_PACKET_STOP_BYTE,
 )
@@ -321,4 +324,200 @@ class VESCProtocol:
 
         except Exception as e:
             _LOGGER.error(f"Error parsing VESC values: {e}")
+            return None
+
+    async def get_bms_values_rapid(self) -> Optional[dict]:
+        """Get BMS values using rapid-fire command sequence.
+
+        This is the WORKING method discovered through packet capture analysis.
+        Must send commands in rapid succession without waiting for individual responses.
+        """
+        if not self._connected or not self.writer or not self.reader:
+            _LOGGER.error("[BMS] Not connected to VESCHub")
+            return None
+
+        try:
+            _LOGGER.info("[BMS] Sending rapid-fire command sequence for BMS access...")
+
+            # Send ALL commands rapidly (VESCTool's secret sauce!)
+            # 1. FW_VERSION - keep-alive
+            packet1 = self._pack_payload(bytes([COMM_FW_VERSION]))
+            self.writer.write(packet1)
+
+            # 2. GET_CUSTOM_CONFIG - initialize device context for BMS
+            packet2 = self._pack_payload(bytes([COMM_GET_CUSTOM_CONFIG, 0x00]))
+            self.writer.write(packet2)
+
+            # 3. PING_CAN - wake/discover CAN devices
+            packet3 = self._pack_payload(bytes([COMM_PING_CAN]))
+            self.writer.write(packet3)
+
+            # 4. BMS_GET_VALUES - request BMS data
+            packet4 = self._pack_payload(bytes([COMM_BMS_GET_VALUES]))
+            self.writer.write(packet4)
+
+            # Flush all at once
+            await self.writer.drain()
+            _LOGGER.info("[BMS] All commands sent, collecting responses...")
+
+            # Collect ALL responses (up to 5 seconds total)
+            import time
+            all_data = b''
+            start_time = time.time()
+
+            while time.time() - start_time < 3.0:
+                try:
+                    chunk = await asyncio.wait_for(
+                        self.reader.read(500),
+                        timeout=0.5
+                    )
+                    if chunk:
+                        all_data += chunk
+                        _LOGGER.debug(f"[BMS] Received {len(chunk)} bytes")
+                    else:
+                        break
+                except asyncio.TimeoutError:
+                    # No more data
+                    break
+
+            if not all_data:
+                _LOGGER.warning("[BMS] No response data received")
+                return None
+
+            _LOGGER.info(f"[BMS] Total received: {len(all_data)} bytes, searching for BMS packet...")
+
+            # Find BMS packet in response stream (starts with 02 [len] 60...)
+            bms_data = self._extract_bms_from_stream(all_data)
+
+            if bms_data:
+                _LOGGER.info("[BMS] Successfully extracted and parsed BMS data!")
+                return bms_data
+            else:
+                _LOGGER.warning("[BMS] BMS packet not found in response stream")
+                return None
+
+        except Exception as e:
+            _LOGGER.error(f"[BMS] Error in rapid-fire BMS retrieval: {e}", exc_info=True)
+            return None
+
+    def _extract_bms_from_stream(self, data: bytes) -> Optional[dict]:
+        """Extract and parse BMS packet from response stream."""
+        idx = 0
+
+        while idx < len(data) - 10:
+            if data[idx] == VESC_PACKET_START_BYTE:
+                # Found potential packet start
+                len_byte = data[idx + 1]
+
+                if len_byte < 128:
+                    payload_len = len_byte
+                    payload_start = idx + 2
+                else:
+                    if idx + 2 >= len(data):
+                        break
+                    payload_len = ((len_byte & 0x7F) << 8) | data[idx + 2]
+                    payload_start = idx + 3
+
+                # Check if this is BMS packet (command byte 0x60)
+                if payload_start < len(data) and data[payload_start] == COMM_BMS_GET_VALUES:
+                    _LOGGER.debug(f"[BMS] Found BMS packet at offset {idx}, payload length {payload_len}")
+
+                    # Extract payload
+                    if payload_start + payload_len <= len(data):
+                        payload = data[payload_start:payload_start + payload_len]
+
+                        # Parse BMS data
+                        return self._parse_bms_payload(payload)
+
+            idx += 1
+
+        return None
+
+    def _parse_bms_payload(self, payload: bytes) -> Optional[dict]:
+        """Parse BMS payload data."""
+        try:
+            # Skip command byte (0x60)
+            data = payload[1:]
+
+            def read_float32(offset):
+                return struct.unpack('>f', data[offset:offset+4])[0]
+
+            def read_uint16(offset):
+                return struct.unpack('>H', data[offset:offset+2])[0]
+
+            def read_uint8(offset):
+                return data[offset]
+
+            # Parse BMS structure
+            bms_data = {
+                "v_tot": read_float32(0),
+                "v_charge": read_float32(4),
+                "i_in": read_float32(8),
+                "i_in_ic": read_float32(12),
+                "ah_cnt": read_float32(16),
+                "wh_cnt": read_float32(20),
+            }
+
+            idx = 24
+
+            # Cell voltages
+            if len(data) > idx:
+                cell_num = read_uint8(idx)
+                idx += 1
+
+                cells = []
+                for i in range(min(cell_num, 32)):
+                    if idx + 2 <= len(data):
+                        cell_v = read_uint16(idx) / 1000.0
+                        cells.append(cell_v)
+                        idx += 2
+
+                bms_data["cell_voltages"] = cells
+                bms_data["cell_num"] = cell_num
+
+                # Calculate cell statistics
+                if cells:
+                    bms_data["cell_min"] = min(cells)
+                    bms_data["cell_max"] = max(cells)
+                    bms_data["cell_avg"] = sum(cells) / len(cells)
+                    bms_data["cell_delta"] = max(cells) - min(cells)
+
+            # Balance state
+            if len(data) > idx + 4:
+                bms_data["bal_state"] = struct.unpack('>I', data[idx:idx+4])[0]
+                idx += 4
+
+            # Temperatures
+            if len(data) > idx:
+                temp_num = read_uint8(idx)
+                idx += 1
+
+                temps = []
+                for i in range(min(temp_num, 10)):
+                    if idx + 2 <= len(data):
+                        temp = read_uint16(idx) / 10.0
+                        temps.append(temp)
+                        idx += 2
+
+                bms_data["temperatures"] = temps
+                bms_data["temp_adc_num"] = temp_num
+
+            # State of charge
+            if len(data) >= idx + 4:
+                bms_data["soc"] = read_float32(idx)
+                idx += 4
+
+            # State of health
+            if len(data) >= idx + 4:
+                bms_data["soh"] = read_float32(idx)
+                idx += 4
+
+            # Capacity
+            if len(data) >= idx + 4:
+                bms_data["capacity_ah"] = read_float32(idx)
+
+            return bms_data
+
+        except Exception as e:
+            _LOGGER.error(f"[BMS] Error parsing BMS payload: {e}")
             return None
