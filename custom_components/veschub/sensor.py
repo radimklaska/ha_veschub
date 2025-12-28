@@ -281,7 +281,16 @@ class VESCDataUpdateCoordinator(DataUpdateCoordinator):
         # Assign it to CAN ID 0 if not already discovered via CAN scan
         try:
             if 0 not in self.discovered_devices:
+                # Ensure fresh connection after CAN scan (which may have caused disconnects)
+                if not self.vesc.is_connected:
+                    _LOGGER.warning("[DISC] Reconnecting before detecting local VESC...")
+                    if not await self.vesc.connect():
+                        _LOGGER.warning("[DISC] Failed to reconnect for local VESC detection")
+                        raise Exception("Could not connect for local VESC detection")
+
+                _LOGGER.warning("[DISC] Querying local VESC controller (CAN ID 0)...")
                 fw_response = await self.vesc._send_command(0)  # Direct COMM_FW_VERSION
+                _LOGGER.warning(f"[DISC] Local VESC response: {len(fw_response) if fw_response else 0} bytes")
                 if fw_response and len(fw_response) > 2:
                     fw_major = fw_response[1]
                     fw_minor = fw_response[2]
@@ -304,6 +313,8 @@ class VESCDataUpdateCoordinator(DataUpdateCoordinator):
                         "is_local": True,  # This is the directly connected controller
                     }
                     _LOGGER.warning(f"[DISC] Local VESC controller: {fw_name} v{fw_major}.{fw_minor}")
+                else:
+                    _LOGGER.warning(f"[DISC] Invalid firmware response from local VESC (too short or empty)")
         except Exception as e:
             _LOGGER.warning(f"[DISC] Could not get local VESC info: {e}")
 
