@@ -17,7 +17,7 @@
           "host": "The hostname or IP address of your VESCHub. Default: veschub.vedder.se for public hub",
           "vesc_id": "Your VESC identifier for authentication on public VESCHub",
           "password": "Password for your VESC on public VESCHub",
-          "can_id_hint": "Optional: Specify CAN IDs (e.g., 0,84,124) to make available immediately during setup. A full background scan (0-254) will run automatically after setup to discover all devices. Leave empty to start with defaults [0, 255]."
+          "can_id_hint": "IMPORTANT: Specify YOUR CAN IDs only (e.g., 0,116). On shared VESCHub servers, automatic scanning is disabled to prevent discovering other users' devices. Default: [0] (local VESC only)."
         }
       }
     },
@@ -26,22 +26,23 @@
       "unknown": "Unexpected error occurred"
     },
     "abort": {
-      "already_configured": "This VESCHub is already configured"
+      "already_configured": "This VESCHub is already configured",
+      "unknown_error": "An unexpected error occurred. Please check the logs and try again."
     }
   },
   "options": {
     "step": {
       "init": {
         "title": "VESC Hub BMS Options",
-        "description": "Discovered devices: {discovered_devices}\nCurrently monitored: {current_monitored}",
+        "description": "⚠️ WARNING: On shared VESCHub servers, only add YOUR device CAN IDs!\n\nDiscovered devices: {discovered_devices}\nCurrently monitored: {current_monitored}",
         "data": {
           "update_interval": "Update interval (seconds)",
           "can_id_list_str": "Monitored CAN IDs (comma-separated)",
-          "trigger_full_scan": "Perform full CAN scan (0-254)"
+          "trigger_full_scan": "Perform full CAN scan (0-254) - USE CAREFULLY on shared servers!"
         },
         "data_description": {
-          "can_id_list_str": "List of CAN IDs to monitor. Example: 0,84,124",
-          "trigger_full_scan": "Check to re-discover all CAN devices. Integration will reload (takes 2-4 minutes)."
+          "can_id_list_str": "YOUR CAN IDs only! Example: 0,116 (0=local VESC, 116=your ADV500). Do NOT add other users' devices!",
+          "trigger_full_scan": "⚠️ CAUTION: On shared VESCHub, this will discover ALL users' devices, not just yours. Only use if you know your specific CAN IDs."
         }
       }
     }

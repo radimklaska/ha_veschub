@@ -378,6 +378,7 @@ class VESCDataUpdateCoordinator(DataUpdateCoordinator):
 
                     else:
                         # CAN device - use COMM_FORWARD_CAN
+                        # First get firmware info
                         wrapped_cmd = bytes([0])  # COMM_FW_VERSION
                         can_data = bytes([can_id]) + wrapped_cmd
                         response = await self.vesc._send_command(COMM_FORWARD_CAN, can_data)
@@ -402,6 +403,31 @@ class VESCDataUpdateCoordinator(DataUpdateCoordinator):
                                 "firmware_name": fw_name,
                                 "online": True,
                             }
+
+                            # Try to get BMS data from CAN device
+                            _LOGGER.debug(f"[UPDATE] Fetching BMS data for CAN device {can_id} ({fw_name})...")
+                            try:
+                                bms_cmd = bytes([COMM_BMS_GET_VALUES])  # COMM_BMS_GET_VALUES
+                                bms_can_data = bytes([can_id]) + bms_cmd
+                                bms_response = await self.vesc._send_command(COMM_FORWARD_CAN, bms_can_data, timeout=2.0)
+
+                                if bms_response and len(bms_response) > 2:
+                                    # Parse BMS data using the existing parse method
+                                    bms_data = self.vesc._parse_bms_response(bms_response)
+                                    if bms_data:
+                                        _LOGGER.info(f"[UPDATE] BMS data retrieved from CAN {can_id}: {bms_data.get('cell_num', 0)} cells, {bms_data.get('v_tot', 0):.2f}V total")
+                                        device_data["bms_available"] = True
+                                        device_data.update(bms_data)
+                                    else:
+                                        _LOGGER.debug(f"[UPDATE] No valid BMS data from CAN {can_id}")
+                                        device_data["bms_available"] = False
+                                else:
+                                    _LOGGER.debug(f"[UPDATE] No BMS response from CAN {can_id}")
+                                    device_data["bms_available"] = False
+                            except Exception as bms_err:
+                                _LOGGER.debug(f"[UPDATE] BMS request failed for CAN {can_id}: {bms_err}")
+                                device_data["bms_available"] = False
+
                         else:
                             device_data = {"online": False}
 

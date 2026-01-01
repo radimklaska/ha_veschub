@@ -93,8 +93,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             schema=vol.Schema({})
         )
 
-    # Schedule background full scan if not done yet
-    if not initial_scan_done:
+    # DISABLED: Automatic background scan can discover other users' devices on shared VESCHub
+    # Users should manually configure their CAN IDs via integration options
+    # Use the veschub.rescan service to manually trigger discovery if needed
+    if False:  # Intentionally disabled - was: not initial_scan_done
         async def run_background_scan():
             """Run full CAN scan in background."""
             await asyncio.sleep(5)  # Wait for setup to complete
@@ -107,19 +109,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 if newly_discovered:
                     discovered_can_ids = sorted(list(coordinator.discovered_devices.keys()))
 
-                    # Update config with discovered devices
-                    new_data = {**entry.data}
-                    new_data[CONF_CAN_ID_LIST] = discovered_can_ids
-                    new_data[CONF_INITIAL_SCAN_DONE] = True
-                    hass.config_entries.async_update_entry(entry, data=new_data)
-
+                    # SECURITY: Do NOT auto-replace user's CAN ID list on shared VESCHub servers
+                    # This could add other users' devices. Manual configuration required.
                     _LOGGER.warning(
-                        f"[DISC] Background scan complete. Added {len(discovered_can_ids)} "
-                        f"CAN IDs to monitored list: {discovered_can_ids}"
+                        f"[DISC] Background scan found {len(discovered_can_ids)} devices: {discovered_can_ids}"
                     )
-
-                    # Reload integration to create entities for new devices
-                    await hass.config_entries.async_reload(entry.entry_id)
+                    _LOGGER.warning(
+                        "[DISC] Automatic device addition DISABLED. "
+                        "Configure your CAN IDs manually in integration options."
+                    )
 
         # Run in background (don't block setup)
         hass.async_create_task(run_background_scan())

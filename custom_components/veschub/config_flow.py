@@ -141,64 +141,76 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Manage the options."""
-        if user_input is not None:
-            # Parse CAN ID list from comma-separated string
-            can_id_str = user_input.get("can_id_list_str", "")
-            can_id_list = sorted(set(
-                int(x.strip())
-                for x in can_id_str.split(",")
-                if x.strip().isdigit() and 0 <= int(x.strip()) <= 253
-            ))
-
-            # Update entry.data (not entry.options)
-            new_data = {**self.config_entry.data}
-            new_data[CONF_UPDATE_INTERVAL] = user_input[CONF_UPDATE_INTERVAL]
-            new_data[CONF_CAN_ID_LIST] = can_id_list
-
-            # Trigger full scan if requested
-            if user_input.get("trigger_full_scan"):
-                new_data[CONF_INITIAL_SCAN_DONE] = False
-
-            self.hass.config_entries.async_update_entry(
-                self.config_entry, data=new_data
-            )
-
-            # Reload integration to apply changes
-            await self.hass.config_entries.async_reload(self.config_entry.entry_id)
-
-            return self.async_create_entry(title="", data={})
-
-        # Get current values
-        current_can_ids = self.config_entry.data.get(CONF_CAN_ID_LIST, DEFAULT_CAN_ID_LIST)
-        current_interval = self.config_entry.data.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL)
-
-        # Get discovered devices from coordinator (if available)
-        discovered_can_ids = []
         try:
-            if DOMAIN in self.hass.data and self.config_entry.entry_id in self.hass.data[DOMAIN]:
-                entry_data = self.hass.data[DOMAIN][self.config_entry.entry_id]
-                coordinator = entry_data.get("coordinator")
-                if coordinator and hasattr(coordinator, "discovered_devices"):
-                    discovered_can_ids = sorted(list(coordinator.discovered_devices.keys()))
-        except Exception:
-            # Coordinator not ready yet, that's ok
-            pass
+            if user_input is not None:
+                # Parse CAN ID list from comma-separated string
+                can_id_str = user_input.get("can_id_list_str", "")
+                try:
+                    can_id_list = sorted(set(
+                        int(x.strip())
+                        for x in can_id_str.split(",")
+                        if x.strip().isdigit() and 0 <= int(x.strip()) <= 253
+                    ))
+                except (ValueError, AttributeError):
+                    can_id_list = DEFAULT_CAN_ID_LIST.copy()
 
-        return self.async_show_form(
-            step_id="init",
-            data_schema=vol.Schema({
-                vol.Optional(
-                    CONF_UPDATE_INTERVAL,
-                    default=current_interval
-                ): vol.All(int, vol.Range(min=1, max=300)),
-                vol.Optional(
-                    "can_id_list_str",
-                    default=",".join(str(x) for x in current_can_ids)
-                ): str,
-                vol.Optional("trigger_full_scan", default=False): bool,
-            }),
-            description_placeholders={
-                "discovered_devices": ", ".join(str(x) for x in discovered_can_ids) if discovered_can_ids else "None",
-                "current_monitored": ", ".join(str(x) for x in current_can_ids),
-            }
-        )
+                # Update entry.data (not entry.options)
+                new_data = {**self.config_entry.data}
+                new_data[CONF_UPDATE_INTERVAL] = user_input[CONF_UPDATE_INTERVAL]
+                new_data[CONF_CAN_ID_LIST] = can_id_list
+
+                # Trigger full scan if requested
+                if user_input.get("trigger_full_scan"):
+                    new_data[CONF_INITIAL_SCAN_DONE] = False
+
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry, data=new_data
+                )
+
+                # Reload integration to apply changes
+                await self.hass.config_entries.async_reload(self.config_entry.entry_id)
+
+                return self.async_create_entry(title="", data={})
+
+            # Get current values with safe defaults
+            current_can_ids = self.config_entry.data.get(CONF_CAN_ID_LIST, DEFAULT_CAN_ID_LIST)
+            current_interval = self.config_entry.data.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL)
+
+            # Ensure current_can_ids is a list
+            if not isinstance(current_can_ids, list):
+                current_can_ids = DEFAULT_CAN_ID_LIST.copy()
+
+            # Get discovered devices from coordinator (if available)
+            discovered_can_ids = []
+            try:
+                if DOMAIN in self.hass.data and self.config_entry.entry_id in self.hass.data[DOMAIN]:
+                    entry_data = self.hass.data[DOMAIN][self.config_entry.entry_id]
+                    coordinator = entry_data.get("coordinator")
+                    if coordinator and hasattr(coordinator, "discovered_devices"):
+                        discovered_can_ids = sorted(list(coordinator.discovered_devices.keys()))
+            except Exception as e:
+                # Coordinator not ready yet, that's ok
+                _LOGGER.debug(f"Could not access coordinator for discovered devices: {e}")
+
+            return self.async_show_form(
+                step_id="init",
+                data_schema=vol.Schema({
+                    vol.Optional(
+                        CONF_UPDATE_INTERVAL,
+                        default=current_interval
+                    ): vol.All(int, vol.Range(min=1, max=300)),
+                    vol.Optional(
+                        "can_id_list_str",
+                        default=",".join(str(x) for x in current_can_ids)
+                    ): str,
+                    vol.Optional("trigger_full_scan", default=False): bool,
+                }),
+                description_placeholders={
+                    "discovered_devices": ", ".join(str(x) for x in discovered_can_ids) if discovered_can_ids else "None",
+                    "current_monitored": ", ".join(str(x) for x in current_can_ids),
+                }
+            )
+        except Exception as e:
+            _LOGGER.exception(f"Error in options flow: {e}")
+            # Return a safe error form
+            return self.async_abort(reason="unknown_error")

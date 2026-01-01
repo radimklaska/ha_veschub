@@ -8,6 +8,27 @@ This is a **Home Assistant HACS integration** for reading BMS (Battery Managemen
 
 **Key Challenge**: VESC Express closes connections on direct data commands (GET_VALUES, BMS_GET_VALUES). Only COMM_FW_VERSION responds. BMS data is likely on CAN bus devices requiring COMM_FORWARD_CAN for access.
 
+## ⚠️ CRITICAL SECURITY ISSUE - Shared VESCHub
+
+**DISCOVERED 2026-01-02**: The public VESCHub server (veschub.vedder.se:65101) does NOT isolate CAN devices by authenticated user. When using `COMM_FORWARD_CAN`, you can access **ANY device** on the server, not just your own!
+
+**Impact:**
+- Automatic CAN scanning (0-254) discovers OTHER USERS' devices
+- Integration was auto-adding 60+ foreign devices to monitored list
+- Users could unintentionally poll/access other users' VESCs
+
+**Mitigation (v0.2.4+):**
+- ✅ Automatic background scanning **DISABLED by default**
+- ✅ Default CAN ID list: `[0]` (local VESC only)
+- ✅ Users MUST manually specify their CAN IDs in options
+- ✅ UI warnings added about shared server risks
+- ⚠️ Manual full scan still available but warns users
+
+**Recommendations:**
+- Use a **private VESCHub instance** for production
+- On shared VESCHub: Only configure YOUR known CAN IDs (e.g., `[0, 116]`)
+- Never enable automatic scanning on shared servers
+
 ## Architecture
 
 ### Communication Flow

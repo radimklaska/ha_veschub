@@ -16,8 +16,8 @@ CONF_SCAN_CAN_BUS = "scan_can_bus"
 DEFAULT_HOST = "veschub.vedder.se"
 DEFAULT_PORT = 65101
 DEFAULT_UPDATE_INTERVAL = 5  # seconds
-DEFAULT_CAN_ID_LIST = [0, 255]  # Local VESC + broadcast address
-DEFAULT_SCAN_CAN_BUS = True  # Scan CAN bus by default
+DEFAULT_CAN_ID_LIST = [0]  # Only local VESC by default (user must add others manually)
+DEFAULT_SCAN_CAN_BUS = False  # Disabled by default to prevent discovering other users' devices on shared VESCHub
 
 # VESC Protocol Constants
 VESC_PACKET_START_BYTE = 0x02
