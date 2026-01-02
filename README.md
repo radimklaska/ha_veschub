@@ -10,7 +10,7 @@ Home Assistant integration for reading Battery Management System (BMS) data from
 
 - **Real-time BMS Monitoring**: Monitor all BMS data from your VESC controller
 - **Comprehensive Data**: Access voltage, current, state of charge, individual cell voltages, temperatures, and more
-- **Local Polling**: Direct TCP connection to your VESCHub for reliable local communication
+- **Flexible Connection**: TCP/IP connection to VESCHub (cloud or local) for reliable communication
 - **Easy Setup**: Simple configuration through Home Assistant UI
 
 ## Supported Sensors
@@ -61,30 +61,78 @@ Home Assistant integration for reading Battery Management System (BMS) data from
    - **Port**: TCP port (default: 65102)
    - **Update Interval**: How often to poll for data (1-300 seconds, default: 5)
 
-## VESCHub Setup
+## VESCHub Connection Options
 
-This integration requires a VESCHub to be accessible on your network. The VESCHub acts as a TCP bridge to your VESC controller.
+This integration connects to your VESC controller via TCP/IP. Despite being labeled "local_polling" in Home Assistant, **by default it connects to veschub.vedder.se which is an internet server**, not a local device.
 
-### Connection Details
+You have **three connection options**:
 
-- **Default Port**: 65102 (local VESCHub)
-- **Public VESCHub**: veschub.vedder.se:65101 (for remote access)
+### Option 1: Vedder's Public VESCHub (Default)
 
-Make sure your VESCHub is:
-1. Connected to your VESC controller
-2. Accessible on your network
-3. Configured to accept TCP connections
+Connect to Benjamin Vedder's public VESCHub server:
+- **Host**: veschub.vedder.se
+- **Port**: 65101
+- **Authentication**: Requires VESC ID and password from VESC Tool
+- **Pros**: No setup required, accessible anywhere with internet
+- **Cons**: Requires internet connection, data goes through Vedder's server
+
+**When to use**: Quick setup, remote access, no local infrastructure
+
+### Option 2: Self-Hosted VESCHub
+
+Run your own VESCHub server using VESC Tool:
+- **Setup**: Run VESC Tool with `--tcpHub` parameter
+- **Port**: 65102 (default)
+- **Authentication**: Optional
+- **Pros**: Full control, privacy, works offline
+- **Cons**: Requires VESC Tool running on a server/computer
+
+**Command:**
+```bash
+vesctool --tcpHub
+```
+
+**When to use**: Privacy concerns, offline operation, local network only
+
+📺 **[Watch Video Tutorial: TCP Hub Setup with VESC Tool](https://www.youtube.com/watch?v=UCYreKztev0)**
+
+### Option 3: Direct VESC Express Connection
+
+Connect directly to VESC Express on your local network:
+- **Host**: IP address of your VESC Express
+- **Port**: 65102 (default VESC Express TCP server)
+- **Recommendation**: Use static IP address for reliability
+- **Pros**: No intermediary, lowest latency, most private
+- **Cons**: Requires VESC Express on network, manual IP configuration
+
+**When to use**: Permanent installation, lowest latency required, VESC Express has network connectivity
+
+**Setting Static IP**: Configure static IP on your VESC Express via VESC Tool to ensure the integration can always find it.
+
+---
+
+### Connection Configuration
+
+When adding the integration in Home Assistant:
+1. Go to **Settings** → **Devices & Services** → **Add Integration**
+2. Search for **VESC Hub BMS**
+3. Enter connection details:
+   - **Host**: Choose from options above (veschub.vedder.se, local VESCHub IP, or VESC Express IP)
+   - **Port**: 65101 (public), 65102 (local/direct)
+   - **VESC ID & Password**: Required for public VESCHub only
 
 ## Testing Your Connection
 
 Before setting up the integration in Home Assistant, you can test your VESCHub connection locally:
+
+**Note**: The proof of concept script uses **Option 1 (Vedder's Public VESCHub)** by default. For Options 2 or 3, modify the script's connection parameters.
 
 ```bash
 # Clone the repository
 git clone https://github.com/radimklaska/ha_veschub
 cd ha_veschub
 
-# Create .env file with your credentials
+# Create .env file with your credentials (for Option 1)
 cat > .env << EOF
 VESC_ID=your-vesc-id
 VESC_PASSWORD=your-password
@@ -95,7 +143,7 @@ python3 proof_of_concept.py
 ```
 
 The proof of concept script will:
-- Connect to VESCHub and authenticate
+- Connect to VESCHub and authenticate (using veschub.vedder.se:65101)
 - Send the rapid-fire BMS command sequence
 - Display all cell voltages and battery statistics
 - Verify the connection is working correctly
