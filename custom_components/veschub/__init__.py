@@ -29,10 +29,7 @@ PLATFORMS: list[Platform] = [Platform.SENSOR]
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up VESC Hub BMS from a config entry."""
-    # Log version for debugging
-    from .manifest import MANIFEST
-    version = MANIFEST.get("version", "unknown")
-    _LOGGER.warning(f"VESC Hub BMS Integration v{version} starting...")
+    _LOGGER.warning("VESC Hub BMS Integration starting...")
 
     host = entry.data[CONF_HOST]
     port = entry.data[CONF_PORT]
@@ -78,9 +75,5 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         vesc = data["vesc"]
         if vesc.is_connected:
             await vesc.disconnect()
-
-        # Unregister service if this is the last entry
-        if not hass.data[DOMAIN]:
-            hass.services.async_remove(DOMAIN, SERVICE_RESCAN)
 
     return unload_ok

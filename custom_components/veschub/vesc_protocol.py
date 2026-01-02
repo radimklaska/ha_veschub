@@ -332,28 +332,41 @@ class VESCProtocol:
         This is the WORKING method discovered through packet capture analysis.
         Must send commands in rapid succession without waiting for individual responses.
         """
-        if not self._connected or not self.writer or not self.reader:
-            _LOGGER.error("[BMS] Not connected to VESCHub")
+        # CRITICAL: Test script creates FRESH connection each time
+        # Reconnect to avoid stale connection state
+        _LOGGER.warning("[BMS] Creating fresh connection for BMS request...")
+        await self.disconnect()
+        if not await self.connect():
+            _LOGGER.error("[BMS] Failed to reconnect for BMS request")
             return None
 
         try:
-            _LOGGER.info("[BMS] Sending rapid-fire command sequence for BMS access...")
+            _LOGGER.warning("[BMS] Sending rapid-fire command sequence for BMS access...")
+
+            # CRITICAL: Wait after connection/auth before sending commands (like test script!)
+            await asyncio.sleep(1.0)
+            _LOGGER.warning("[BMS] Auth settled, sending commands...")
 
             # Send ALL commands rapidly (VESCTool's secret sauce!)
+            # HARDCODED values matching test_rapid_fire_raw.py exactly!
             # 1. FW_VERSION - keep-alive
-            packet1 = self._pack_payload(bytes([COMM_FW_VERSION]))
+            packet1 = self._pack_payload(bytes([0x00]))
+            _LOGGER.warning(f"[BMS] Packet 1 (FW_VERSION 0x00): {packet1.hex(' ')}")
             self.writer.write(packet1)
 
             # 2. GET_CUSTOM_CONFIG - initialize device context for BMS
-            packet2 = self._pack_payload(bytes([COMM_GET_CUSTOM_CONFIG, 0x00]))
+            packet2 = self._pack_payload(bytes([0x5d, 0x00]))
+            _LOGGER.warning(f"[BMS] Packet 2 (GET_CUSTOM_CONFIG 0x5d): {packet2.hex(' ')}")
             self.writer.write(packet2)
 
             # 3. PING_CAN - wake/discover CAN devices
-            packet3 = self._pack_payload(bytes([COMM_PING_CAN]))
+            packet3 = self._pack_payload(bytes([0x3e]))
+            _LOGGER.warning(f"[BMS] Packet 3 (PING_CAN 0x3e): {packet3.hex(' ')}")
             self.writer.write(packet3)
 
             # 4. BMS_GET_VALUES - request BMS data
-            packet4 = self._pack_payload(bytes([COMM_BMS_GET_VALUES]))
+            packet4 = self._pack_payload(bytes([0x60]))
+            _LOGGER.warning(f"[BMS] Packet 4 (BMS_GET_VALUES 0x60): {packet4.hex(' ')}")
             self.writer.write(packet4)
 
             # Flush all at once
@@ -368,23 +381,32 @@ class VESCProtocol:
             while time.time() - start_time < 3.0:
                 try:
                     chunk = await asyncio.wait_for(
-                        self.reader.read(500),
+                        self.reader.read(1024),
                         timeout=0.5
                     )
                     if chunk:
                         all_data += chunk
-                        _LOGGER.debug(f"[BMS] Received {len(chunk)} bytes")
-                    else:
-                        break
+                        _LOGGER.warning(f"[BMS] Received {len(chunk)} bytes (total: {len(all_data)})")
+                    # DON'T break on empty chunk - keep reading!
                 except asyncio.TimeoutError:
-                    # No more data
-                    break
+                    # Timeout is normal - keep reading until 3 seconds elapsed
+                    if all_data:
+                        continue  # Got some data, keep trying
+                    else:
+                        break  # No data at all, give up
 
             if not all_data:
                 _LOGGER.warning("[BMS] No response data received")
                 return None
 
             _LOGGER.info(f"[BMS] Total received: {len(all_data)} bytes, searching for BMS packet...")
+
+            # DEBUG: Log raw data as hex
+            hex_dump = all_data.hex(' ')
+            _LOGGER.warning(f"[BMS] Raw response data ({len(all_data)} bytes):")
+            # Log in chunks for readability
+            for i in range(0, len(hex_dump), 150):
+                _LOGGER.warning(f"  {hex_dump[i:i+150]}")
 
             # Find BMS packet in response stream (starts with 02 [len] 60...)
             bms_data = self._extract_bms_from_stream(all_data)
@@ -394,6 +416,20 @@ class VESCProtocol:
                 return bms_data
             else:
                 _LOGGER.warning("[BMS] BMS packet not found in response stream")
+                # DEBUG: Log packet start bytes to see what commands we're receiving
+                packets_found = []
+                idx = 0
+                while idx < len(all_data) - 3:
+                    if all_data[idx] == VESC_PACKET_START_BYTE:
+                        len_byte = all_data[idx + 1]
+                        if len_byte < 128:
+                            cmd_offset = idx + 2
+                        else:
+                            cmd_offset = idx + 3
+                        if cmd_offset < len(all_data):
+                            packets_found.append(f"0x{all_data[cmd_offset]:02x}")
+                    idx += 1
+                _LOGGER.warning(f"[BMS] Command bytes found in response: {', '.join(packets_found)}")
                 return None
 
         except Exception as e:
@@ -409,14 +445,11 @@ class VESCProtocol:
                 # Found potential packet start
                 len_byte = data[idx + 1]
 
-                if len_byte < 128:
-                    payload_len = len_byte
-                    payload_start = idx + 2
-                else:
-                    if idx + 2 >= len(data):
-                        break
-                    payload_len = ((len_byte & 0x7F) << 8) | data[idx + 2]
-                    payload_start = idx + 3
+                # VESC packet length encoding:
+                # For our BMS packets (< 256 bytes), length is always single byte
+                # Just use the byte value as-is
+                payload_len = len_byte
+                payload_start = idx + 2
 
                 # Check if this is BMS packet (command byte 0x60)
                 if payload_start < len(data) and data[payload_start] == COMM_BMS_GET_VALUES:
@@ -503,23 +536,36 @@ class VESCProtocol:
                         balance_flags.append(bool(flag))
                     bms_data["balance_flags"] = balance_flags
 
-                # Temperatures (format TBD - need more packet captures)
-                # Temperature data appears to be after balance flags
+                # Temperatures - read count byte first, then temperature values
                 temp_offset = balance_offset + cell_num
-                if len(data) > temp_offset + 6:
-                    # Try to parse temperature data
+                _LOGGER.warning(f"[BMS] Temperature offset: {temp_offset}, data length: {len(data)}")
+                if len(data) > temp_offset + 1:
+                    # Read temperature count byte
+                    temp_adc_num = read_uint8(temp_offset)
+                    _LOGGER.warning(f"[BMS] Temperature count byte: {temp_adc_num}")
+
+                    # Dump the temperature region for analysis
+                    temp_region = data[temp_offset:min(temp_offset+20, len(data))]
+                    _LOGGER.warning(f"[BMS] Temp region hex (first 20 bytes): {temp_region.hex(' ')}")
+
+                    # Skip the count byte and read temperature values
                     temps = []
-                    for i in range(3):  # Try reading up to 3 temps
-                        offset = temp_offset + (i * 2)
+                    for i in range(min(temp_adc_num, 10)):  # Max 10 temp sensors
+                        offset = temp_offset + 1 + (i * 2)  # +1 to skip count byte
                         if offset + 2 <= len(data):
                             temp_raw = read_uint16(offset)
-                            if temp_raw > 0 and temp_raw < 1000:  # Sanity check
-                                temp = temp_raw / 10.0  # Assuming 0.1°C resolution
+                            _LOGGER.warning(f"[BMS] Temp {i}: offset={offset}, raw=0x{temp_raw:04x} ({temp_raw} dec), div100={temp_raw/100.0:.2f}")
+                            if temp_raw > 0 and temp_raw < 10000:  # Sanity check: 0-100°C (raw: 0-10000)
+                                temp = temp_raw / 100.0  # Convert centidegrees to °C (0.01°C resolution)
                                 temps.append(temp)
+                                _LOGGER.warning(f"[BMS] Temp {i} ACCEPTED: {temp:.2f}°C")
 
                     if temps:
                         bms_data["temperatures"] = temps
-                        bms_data["temp_adc_num"] = len(temps)
+                        bms_data["temp_adc_num"] = temp_adc_num
+                        _LOGGER.warning(f"[BMS] Found {len(temps)} valid temperatures: {temps}")
+                    else:
+                        _LOGGER.warning(f"[BMS] No valid temperatures found (count={temp_adc_num})")
 
             return bms_data if bms_data else None
 

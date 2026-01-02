@@ -131,7 +131,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
-        self.config_entry = config_entry
+        self._config_entry = config_entry
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -151,22 +151,22 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     can_id_list = DEFAULT_CAN_ID_LIST.copy()
 
                 # Update entry.data (not entry.options)
-                new_data = {**self.config_entry.data}
+                new_data = {**self._config_entry.data}
                 new_data[CONF_UPDATE_INTERVAL] = user_input[CONF_UPDATE_INTERVAL]
                 new_data[CONF_CAN_ID_LIST] = can_id_list
 
                 self.hass.config_entries.async_update_entry(
-                    self.config_entry, data=new_data
+                    self._config_entry, data=new_data
                 )
 
                 # Reload integration to apply changes
-                await self.hass.config_entries.async_reload(self.config_entry.entry_id)
+                await self.hass.config_entries.async_reload(self._config_entry.entry_id)
 
                 return self.async_create_entry(title="", data={})
 
             # Get current values with safe defaults
-            current_can_ids = self.config_entry.data.get(CONF_CAN_ID_LIST, DEFAULT_CAN_ID_LIST)
-            current_interval = self.config_entry.data.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL)
+            current_can_ids = self._config_entry.data.get(CONF_CAN_ID_LIST, DEFAULT_CAN_ID_LIST)
+            current_interval = self._config_entry.data.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL)
 
             # Ensure current_can_ids is a list
             if not isinstance(current_can_ids, list):

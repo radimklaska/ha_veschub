@@ -177,6 +177,15 @@ async def async_setup_entry(
                 ),
             ])
 
+            # Add individual cell voltage sensors (will populate dynamically when BMS data available)
+            # Create up to 24 cells (will only show data for cells that exist)
+            for cell_idx in range(24):
+                sensors.append(VESCCellVoltageSensor(coordinator, entry, cell_idx))
+
+            # Add temperature sensors (will populate dynamically when temp data available)
+            for temp_idx in range(5):
+                sensors.append(VESCTemperatureSensor(coordinator, entry, temp_idx))
+
         _LOGGER.info(f"Created sensors for device: {device_name} (CAN ID {can_id})")
 
     if not sensors:
@@ -471,6 +480,10 @@ class VESCDeviceSensor(CoordinatorEntity, SensorEntity):
         self._attr_state_class = state_class
         self._attr_icon = icon
 
+        # Set precision for voltage sensors
+        if device_class == SensorDeviceClass.VOLTAGE:
+            self._attr_suggested_display_precision = 3  # Show 3 decimal places
+
         # Create separate device for each CAN ID
         # CAN devices are linked via the local controller (CAN 0) if it exists
         via_dev = None
@@ -543,6 +556,7 @@ class VESCCellVoltageSensor(CoordinatorEntity, SensorEntity):
         self._attr_native_unit_of_measurement = UnitOfElectricPotential.VOLT
         self._attr_device_class = SensorDeviceClass.VOLTAGE
         self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_suggested_display_precision = 3  # Show 3 decimal places (4.195 V)
         self._attr_icon = "mdi:battery-outline"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
@@ -557,7 +571,9 @@ class VESCCellVoltageSensor(CoordinatorEntity, SensorEntity):
         if self.coordinator.data is None:
             return None
 
-        cell_voltages = self.coordinator.data.get("cell_voltages", [])
+        # BMS data is stored under CAN ID 0 (local VESC Express)
+        device_data = self.coordinator.data.get(0, {})
+        cell_voltages = device_data.get("cell_voltages", [])
         if self._cell_index < len(cell_voltages):
             return cell_voltages[self._cell_index]
         return None
@@ -594,7 +610,9 @@ class VESCTemperatureSensor(CoordinatorEntity, SensorEntity):
         if self.coordinator.data is None:
             return None
 
-        temperatures = self.coordinator.data.get("temperatures", [])
+        # BMS data is stored under CAN ID 0 (local VESC Express)
+        device_data = self.coordinator.data.get(0, {})
+        temperatures = device_data.get("temperatures", [])
         if self._temp_index < len(temperatures):
             return temperatures[self._temp_index]
         return None
