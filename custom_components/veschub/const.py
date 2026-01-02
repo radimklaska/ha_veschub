@@ -8,16 +8,13 @@ CONF_PORT = "port"
 CONF_VESC_ID = "vesc_id"
 CONF_PASSWORD = "password"
 CONF_UPDATE_INTERVAL = "update_interval"
-CONF_CAN_ID_LIST = "can_id_list"  # List[int] - monitored CAN IDs
-CONF_INITIAL_SCAN_DONE = "initial_scan_done"  # bool - tracks if full scan completed
-CONF_SCAN_CAN_BUS = "scan_can_bus"
+CONF_CAN_ID_LIST = "can_id_list"  # List[int] - monitored CAN IDs (user-provided only)
 
 # Defaults
 DEFAULT_HOST = "veschub.vedder.se"
 DEFAULT_PORT = 65101
 DEFAULT_UPDATE_INTERVAL = 5  # seconds
-DEFAULT_CAN_ID_LIST = [0]  # Only local VESC by default (user must add others manually)
-DEFAULT_SCAN_CAN_BUS = False  # Disabled by default to prevent discovering other users' devices on shared VESCHub
+DEFAULT_CAN_ID_LIST = [0]  # Only local VESC by default
 
 # VESC Protocol Constants
 VESC_PACKET_START_BYTE = 0x02

@@ -42,18 +42,14 @@ async def async_setup_entry(
     data = hass.data[DOMAIN][entry.entry_id]
     vesc: VESCProtocol = data["vesc"]
     update_interval = data["update_interval"]
-    scan_can_bus = data.get("scan_can_bus", True)
-    can_id_list = data.get("can_id_list", [0, 255])
-    initial_scan_done = data.get("initial_scan_done", False)
+    can_id_list = data.get("can_id_list", [0])
 
     # Create data update coordinator
     coordinator = VESCDataUpdateCoordinator(
         hass,
         vesc,
         update_interval,
-        scan_can_bus,
         can_id_list,
-        initial_scan_done,
     )
 
     # Store coordinator for options flow and background scan access
@@ -197,15 +193,11 @@ class VESCDataUpdateCoordinator(DataUpdateCoordinator):
         hass: HomeAssistant,
         vesc: VESCProtocol,
         update_interval: int,
-        scan_can_bus: bool = True,
         can_id_list: list[int] | None = None,
-        initial_scan_done: bool = False,
     ) -> None:
         """Initialize."""
         self.vesc = vesc
-        self.scan_can_bus = scan_can_bus
-        self.can_id_list = can_id_list or [0, 255]
-        self.initial_scan_done = initial_scan_done
+        self.can_id_list = can_id_list or [0]
         self.discovered_devices: dict[int, dict[str, Any]] = {}  # CAN ID -> device info
         super().__init__(
             hass,
@@ -214,11 +206,10 @@ class VESCDataUpdateCoordinator(DataUpdateCoordinator):
             update_interval=timedelta(seconds=update_interval),
         )
 
-    async def discover_can_devices(self, full_scan: bool = False) -> dict[int, dict[str, Any]]:
-        """Discover CAN devices - returns newly found devices.
+    async def discover_can_devices(self) -> dict[int, dict[str, Any]]:
+        """Discover CAN devices - only scans user-configured CAN IDs.
 
-        Args:
-            full_scan: If True, scan all CAN IDs (0-254). If False, scan only configured list.
+        Returns newly found devices.
         """
         _LOGGER.warning("[DISC] Starting device discovery...")
         newly_discovered = {}
@@ -230,27 +221,18 @@ class VESCDataUpdateCoordinator(DataUpdateCoordinator):
                 _LOGGER.warning("[DISC] Failed to connect")
                 return newly_discovered
 
-        # Determine scan range
-        if full_scan:
-            # FULL SCAN: All valid CAN IDs (0-254)
-            scan_ids = range(0, 255)
-            _LOGGER.warning("[DISC] Performing FULL CAN bus scan (0-254). This may take 2-4 minutes...")
-        else:
-            # LIST-BASED SCAN: Only monitored IDs
-            scan_ids = self.can_id_list
-            _LOGGER.warning(f"[DISC] Scanning monitored CAN IDs: {scan_ids}")
+        # Only scan user-configured CAN IDs (no automatic full scan)
+        scan_ids = self.can_id_list
+        _LOGGER.warning(f"[DISC] Scanning user-configured CAN IDs: {scan_ids}")
 
-        # Scan CAN bus if enabled
-        if self.scan_can_bus:
+        # Scan configured CAN IDs
+        if scan_ids:
             total_ids = len(list(scan_ids))
             scanned = 0
 
             for can_id in scan_ids:
                 scanned += 1
 
-                # Progress logging (every 25 IDs for full scan)
-                if full_scan and scanned % 25 == 0:
-                    _LOGGER.warning(f"[DISC] Scan progress: {scanned}/{total_ids} CAN IDs checked...")
                 try:
                     # Reconnect if needed (timeouts may disconnect)
                     if not self.vesc.is_connected:
@@ -260,7 +242,7 @@ class VESCDataUpdateCoordinator(DataUpdateCoordinator):
                     # Query device firmware
                     wrapped_cmd = bytes([0])  # COMM_FW_VERSION
                     can_data = bytes([can_id]) + wrapped_cmd
-                    response = await self.vesc._send_command(COMM_FORWARD_CAN, can_data, timeout=1.0)
+                    response = await self.vesc._send_command(COMM_FORWARD_CAN, can_data, timeout=3.0)
 
                     if response and len(response) > 2:
                         # Parse firmware response
@@ -347,8 +329,9 @@ class VESCDataUpdateCoordinator(DataUpdateCoordinator):
             # Return data structure: {can_id: {sensor_data}}
             all_data = {}
 
-            # Update each discovered device
-            for can_id in self.discovered_devices.keys():
+            # Update each user-configured CAN ID (not just discovered devices)
+            # This ensures we keep trying even if initial discovery failed
+            for can_id in self.can_id_list:
                 device_data = {}
 
                 try:

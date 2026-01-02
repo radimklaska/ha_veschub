@@ -14,15 +14,12 @@ from homeassistant.exceptions import HomeAssistantError
 
 from .const import (
     CONF_CAN_ID_LIST,
-    CONF_INITIAL_SCAN_DONE,
     CONF_PASSWORD,
-    CONF_SCAN_CAN_BUS,
     CONF_UPDATE_INTERVAL,
     CONF_VESC_ID,
     DEFAULT_CAN_ID_LIST,
     DEFAULT_HOST,
     DEFAULT_PORT,
-    DEFAULT_SCAN_CAN_BUS,
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
 )
@@ -39,8 +36,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
         vol.Optional(CONF_UPDATE_INTERVAL, default=DEFAULT_UPDATE_INTERVAL): vol.All(
             int, vol.Range(min=1, max=300)
         ),
-        vol.Optional(CONF_SCAN_CAN_BUS, default=DEFAULT_SCAN_CAN_BUS): bool,
-        vol.Optional("can_id_hint", default=""): str,  # Optional: "0,84,124"
+        vol.Required("can_id_list_str", default="0"): str,  # Required: User must specify CAN IDs
     }
 )
 
@@ -86,22 +82,22 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            # Parse CAN ID hint if provided
-            can_id_hint = user_input.pop("can_id_hint", "")
-            if can_id_hint:
-                try:
-                    can_id_list = sorted(set(
-                        int(x.strip())
-                        for x in can_id_hint.split(",")
-                        if x.strip().isdigit() and 0 <= int(x.strip()) <= 253
-                    ))
-                except ValueError:
+            # Parse CAN ID list from user input (required field)
+            can_id_str = user_input.pop("can_id_list_str", "0")
+            try:
+                can_id_list = sorted(set(
+                    int(x.strip())
+                    for x in can_id_str.split(",")
+                    if x.strip().isdigit() and 0 <= int(x.strip()) <= 253
+                ))
+                if not can_id_list:
+                    errors["base"] = "invalid_can_ids"
                     can_id_list = DEFAULT_CAN_ID_LIST.copy()
-            else:
+            except ValueError:
+                errors["base"] = "invalid_can_ids"
                 can_id_list = DEFAULT_CAN_ID_LIST.copy()
 
             user_input[CONF_CAN_ID_LIST] = can_id_list
-            user_input[CONF_INITIAL_SCAN_DONE] = False  # Trigger full scan
 
             try:
                 info = await validate_input(self.hass, user_input)
@@ -159,10 +155,6 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 new_data[CONF_UPDATE_INTERVAL] = user_input[CONF_UPDATE_INTERVAL]
                 new_data[CONF_CAN_ID_LIST] = can_id_list
 
-                # Trigger full scan if requested
-                if user_input.get("trigger_full_scan"):
-                    new_data[CONF_INITIAL_SCAN_DONE] = False
-
                 self.hass.config_entries.async_update_entry(
                     self.config_entry, data=new_data
                 )
@@ -180,33 +172,19 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             if not isinstance(current_can_ids, list):
                 current_can_ids = DEFAULT_CAN_ID_LIST.copy()
 
-            # Get discovered devices from coordinator (if available)
-            discovered_can_ids = []
-            try:
-                if DOMAIN in self.hass.data and self.config_entry.entry_id in self.hass.data[DOMAIN]:
-                    entry_data = self.hass.data[DOMAIN][self.config_entry.entry_id]
-                    coordinator = entry_data.get("coordinator")
-                    if coordinator and hasattr(coordinator, "discovered_devices"):
-                        discovered_can_ids = sorted(list(coordinator.discovered_devices.keys()))
-            except Exception as e:
-                # Coordinator not ready yet, that's ok
-                _LOGGER.debug(f"Could not access coordinator for discovered devices: {e}")
-
             return self.async_show_form(
                 step_id="init",
                 data_schema=vol.Schema({
-                    vol.Optional(
+                    vol.Required(
                         CONF_UPDATE_INTERVAL,
                         default=current_interval
                     ): vol.All(int, vol.Range(min=1, max=300)),
-                    vol.Optional(
+                    vol.Required(
                         "can_id_list_str",
                         default=",".join(str(x) for x in current_can_ids)
                     ): str,
-                    vol.Optional("trigger_full_scan", default=False): bool,
                 }),
                 description_placeholders={
-                    "discovered_devices": ", ".join(str(x) for x in discovered_can_ids) if discovered_can_ids else "None",
                     "current_monitored": ", ".join(str(x) for x in current_can_ids),
                 }
             )

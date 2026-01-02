@@ -13,13 +13,10 @@ from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import (
     CONF_CAN_ID_LIST,
-    CONF_INITIAL_SCAN_DONE,
     CONF_PASSWORD,
-    CONF_SCAN_CAN_BUS,
     CONF_UPDATE_INTERVAL,
     CONF_VESC_ID,
     DEFAULT_CAN_ID_LIST,
-    DEFAULT_SCAN_CAN_BUS,
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
 )
@@ -28,7 +25,6 @@ from .vesc_protocol import VESCProtocol
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.SENSOR]
-SERVICE_RESCAN = "rescan_can_bus"
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -43,9 +39,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     vesc_id = entry.data.get(CONF_VESC_ID)
     password = entry.data.get(CONF_PASSWORD)
     update_interval = entry.data.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL)
-    scan_can_bus = entry.data.get(CONF_SCAN_CAN_BUS, DEFAULT_SCAN_CAN_BUS)
     can_id_list = entry.data.get(CONF_CAN_ID_LIST, DEFAULT_CAN_ID_LIST)
-    initial_scan_done = entry.data.get(CONF_INITIAL_SCAN_DONE, False)
 
     # Create VESC protocol instance
     vesc = VESCProtocol(host, port, vesc_id, password)
@@ -64,63 +58,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "host": host,
         "port": port,
         "update_interval": update_interval,
-        "scan_can_bus": scan_can_bus,
         "can_id_list": can_id_list,
-        "initial_scan_done": initial_scan_done,
     }
 
     # Forward setup to sensor platform
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-
-    # Register rescan service (once, not per entry)
-    if not hass.services.has_service(DOMAIN, SERVICE_RESCAN):
-        async def handle_rescan(call):
-            """Handle rescan service call."""
-            # Trigger full scan by resetting flag
-            new_data = {**entry.data}
-            new_data[CONF_INITIAL_SCAN_DONE] = False
-            hass.config_entries.async_update_entry(entry, data=new_data)
-
-            # Reload integration (background scan will run on reload)
-            await hass.config_entries.async_reload(entry.entry_id)
-
-            _LOGGER.info(f"CAN bus rescan triggered for entry {entry.entry_id}")
-
-        hass.services.async_register(
-            DOMAIN,
-            SERVICE_RESCAN,
-            handle_rescan,
-            schema=vol.Schema({})
-        )
-
-    # DISABLED: Automatic background scan can discover other users' devices on shared VESCHub
-    # Users should manually configure their CAN IDs via integration options
-    # Use the veschub.rescan service to manually trigger discovery if needed
-    if False:  # Intentionally disabled - was: not initial_scan_done
-        async def run_background_scan():
-            """Run full CAN scan in background."""
-            await asyncio.sleep(5)  # Wait for setup to complete
-
-            coordinator = hass.data[DOMAIN][entry.entry_id].get("coordinator")
-            if coordinator:
-                _LOGGER.warning("[DISC] Starting background full CAN scan (0-254)...")
-                newly_discovered = await coordinator.discover_can_devices(full_scan=True)
-
-                if newly_discovered:
-                    discovered_can_ids = sorted(list(coordinator.discovered_devices.keys()))
-
-                    # SECURITY: Do NOT auto-replace user's CAN ID list on shared VESCHub servers
-                    # This could add other users' devices. Manual configuration required.
-                    _LOGGER.warning(
-                        f"[DISC] Background scan found {len(discovered_can_ids)} devices: {discovered_can_ids}"
-                    )
-                    _LOGGER.warning(
-                        "[DISC] Automatic device addition DISABLED. "
-                        "Configure your CAN IDs manually in integration options."
-                    )
-
-        # Run in background (don't block setup)
-        hass.async_create_task(run_background_scan())
 
     return True
 
