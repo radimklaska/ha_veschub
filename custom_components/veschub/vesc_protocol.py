@@ -434,13 +434,19 @@ class VESCProtocol:
         return None
 
     def _parse_bms_payload(self, payload: bytes) -> Optional[dict]:
-        """Parse BMS payload data."""
+        """Parse BMS payload data.
+
+        Based on packet capture analysis (2026-01-02):
+        - Byte 0: 0x60 (command ID, stripped from payload)
+        - Bytes 0-23: Status/metadata (format TBD)
+        - Byte 24: Cell count (0x14 = 20 decimal)
+        - Bytes 25+: Cell voltages (uint16, big-endian, millivolts)
+        - Bytes 65+: Balance flags (uint8 per cell)
+        - Bytes 85+: Additional data (temperatures, etc.)
+        """
         try:
             # Skip command byte (0x60)
             data = payload[1:]
-
-            def read_float32(offset):
-                return struct.unpack('>f', data[offset:offset+4])[0]
 
             def read_uint16(offset):
                 return struct.unpack('>H', data[offset:offset+2])[0]
@@ -448,32 +454,28 @@ class VESCProtocol:
             def read_uint8(offset):
                 return data[offset]
 
-            # Parse BMS structure
-            bms_data = {
-                "v_tot": read_float32(0),
-                "v_charge": read_float32(4),
-                "i_in": read_float32(8),
-                "i_in_ic": read_float32(12),
-                "ah_cnt": read_float32(16),
-                "wh_cnt": read_float32(20),
-            }
+            bms_data = {}
 
-            idx = 24
+            # Cell count at offset 24 (verified via packet capture)
+            if len(data) > 24:
+                cell_num = read_uint8(24)
+                bms_data["cell_num"] = cell_num
 
-            # Cell voltages
-            if len(data) > idx:
-                cell_num = read_uint8(idx)
-                idx += 1
+                _LOGGER.debug(f"[BMS] Detected {cell_num} cells")
 
+                # Cell voltages start at offset 25
                 cells = []
-                for i in range(min(cell_num, 32)):
-                    if idx + 2 <= len(data):
-                        cell_v = read_uint16(idx) / 1000.0
+                for i in range(min(cell_num, 32)):  # Max 32 cells safety limit
+                    offset = 25 + (i * 2)
+                    if offset + 2 <= len(data):
+                        cell_mv = read_uint16(offset)
+                        cell_v = cell_mv / 1000.0  # Convert mV to V
                         cells.append(cell_v)
-                        idx += 2
+                    else:
+                        _LOGGER.warning(f"[BMS] Not enough data for cell {i+1}")
+                        break
 
                 bms_data["cell_voltages"] = cells
-                bms_data["cell_num"] = cell_num
 
                 # Calculate cell statistics
                 if cells:
@@ -482,42 +484,46 @@ class VESCProtocol:
                     bms_data["cell_avg"] = sum(cells) / len(cells)
                     bms_data["cell_delta"] = max(cells) - min(cells)
 
-            # Balance state
-            if len(data) > idx + 4:
-                bms_data["bal_state"] = struct.unpack('>I', data[idx:idx+4])[0]
-                idx += 4
+                    # Calculate total pack voltage from cells
+                    bms_data["v_tot"] = sum(cells)
 
-            # Temperatures
-            if len(data) > idx:
-                temp_num = read_uint8(idx)
-                idx += 1
+                    _LOGGER.debug(
+                        f"[BMS] Cell stats: min={bms_data['cell_min']:.3f}V, "
+                        f"max={bms_data['cell_max']:.3f}V, "
+                        f"avg={bms_data['cell_avg']:.3f}V, "
+                        f"delta={bms_data['cell_delta']*1000:.1f}mV"
+                    )
 
-                temps = []
-                for i in range(min(temp_num, 10)):
-                    if idx + 2 <= len(data):
-                        temp = read_uint16(idx) / 10.0
-                        temps.append(temp)
-                        idx += 2
+                # Balance flags at offset 65 (after 20 cells × 2 bytes = 40 bytes)
+                balance_offset = 25 + (cell_num * 2)
+                if len(data) > balance_offset + cell_num:
+                    balance_flags = []
+                    for i in range(cell_num):
+                        flag = read_uint8(balance_offset + i)
+                        balance_flags.append(bool(flag))
+                    bms_data["balance_flags"] = balance_flags
 
-                bms_data["temperatures"] = temps
-                bms_data["temp_adc_num"] = temp_num
+                # Temperatures (format TBD - need more packet captures)
+                # Temperature data appears to be after balance flags
+                temp_offset = balance_offset + cell_num
+                if len(data) > temp_offset + 6:
+                    # Try to parse temperature data
+                    temps = []
+                    for i in range(3):  # Try reading up to 3 temps
+                        offset = temp_offset + (i * 2)
+                        if offset + 2 <= len(data):
+                            temp_raw = read_uint16(offset)
+                            if temp_raw > 0 and temp_raw < 1000:  # Sanity check
+                                temp = temp_raw / 10.0  # Assuming 0.1°C resolution
+                                temps.append(temp)
 
-            # State of charge
-            if len(data) >= idx + 4:
-                bms_data["soc"] = read_float32(idx)
-                idx += 4
+                    if temps:
+                        bms_data["temperatures"] = temps
+                        bms_data["temp_adc_num"] = len(temps)
 
-            # State of health
-            if len(data) >= idx + 4:
-                bms_data["soh"] = read_float32(idx)
-                idx += 4
-
-            # Capacity
-            if len(data) >= idx + 4:
-                bms_data["capacity_ah"] = read_float32(idx)
-
-            return bms_data
+            return bms_data if bms_data else None
 
         except Exception as e:
-            _LOGGER.error(f"[BMS] Error parsing BMS payload: {e}")
+            _LOGGER.error(f"[BMS] Error parsing BMS payload: {e}", exc_info=True)
+            _LOGGER.error(f"[BMS] Payload hex dump: {payload[:100].hex()}")
             return None
