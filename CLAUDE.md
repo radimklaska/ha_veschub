@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a **Home Assistant HACS integration** for reading BMS (Battery Management System) data from VESC controllers through VESCHub via TCP/IP. The integration is in active development (prerelease v0.0.x) targeting VESC Express devices with CAN bus motor controllers.
+This is a **Home Assistant HACS integration** for reading BMS (Battery Management System) data from VESC controllers through VESCHub via TCP/IP. The integration is in active development (v0.2.x) targeting VESC Express devices with CAN bus motor controllers.
 
-**Key Challenge**: VESC Express closes connections on direct data commands (GET_VALUES, BMS_GET_VALUES). Only COMM_FW_VERSION responds. BMS data is likely on CAN bus devices requiring COMM_FORWARD_CAN for access.
+**BMS Data Retrieval**: Successfully implemented using rapid-fire command sequence (FW_VERSION → GET_CUSTOM_CONFIG → PING_CAN → BMS_GET_VALUES). Direct BMS commands fail, but sending all 4 commands rapidly without waiting for responses works reliably.
 
 ## ⚠️ CRITICAL SECURITY ISSUE - Shared VESCHub
 
@@ -17,7 +17,7 @@ This is a **Home Assistant HACS integration** for reading BMS (Battery Managemen
 - Integration was auto-adding 60+ foreign devices to monitored list
 - Users could unintentionally poll/access other users' VESCs
 
-**Mitigation (v0.2.4+):**
+**Mitigation (v0.2.9):**
 - ✅ Automatic background scanning **DISABLED by default**
 - ✅ Default CAN ID list: `[0]` (local VESC only)
 - ✅ Users MUST manually specify their CAN IDs in options
@@ -69,8 +69,10 @@ Home Assistant → VESCHub (TCP) → VESC Express → CAN Bus → Motor Controll
 **IMPORTANT**: Always use the automated script to keep versions in sync:
 
 ```bash
-./tag_version.sh 0.0.8 "Description of changes"
+./tag_version.sh 0.2.10 "Description of changes"
 ```
+
+Note: The script only commits manifest.json changes. Remember to commit your actual code changes separately with a detailed commit message.
 
 This updates `manifest.json`, creates git tag, and pushes to GitHub automatically.
 
@@ -80,13 +82,13 @@ This updates `manifest.json`, creates git tag, and pushes to GitHub automaticall
 
 ### Installation
 ```bash
-# Manual update
+# Manual update (example for v0.2.9)
 cd /config/custom_components
 rm -rf veschub
-wget https://github.com/radimklaska/ha_veschub/archive/refs/tags/v0.0.X.zip
-unzip v0.0.X.zip
-mv ha_veschub-0.0.X/custom_components/veschub .
-rm -rf ha_veschub-0.0.X v0.0.X.zip
+wget https://github.com/radimklaska/ha_veschub/archive/refs/tags/v0.2.9.zip
+unzip v0.2.9.zip
+mv ha_veschub-0.2.9/custom_components/veschub .
+rm -rf ha_veschub-0.2.9 v0.2.9.zip
 ```
 
 ### Debug Logging
@@ -106,19 +108,34 @@ Look for tagged log messages:
 - `[CAN]` - CAN forwarding attempts
 - `[BMS]` - BMS data requests
 
-## Current State (v0.0.7)
+## Current State (v0.2.9)
 
 **What Works:**
-- ✅ TCP connection to VESCHub
-- ✅ Authentication (VESCTOOL:ID:PASSWORD)
-- ✅ COMM_FW_VERSION (0x00) - returns 43 bytes "VESC Express T"
+- ✅ TCP connection to VESCHub with authentication
+- ✅ BMS data retrieval using rapid-fire command sequence
+- ✅ Cell voltage sensors (20 cells) displaying correct values
+- ✅ Temperature sensors (3 temps) displaying correct values
+- ✅ Summary sensors (Battery Voltage, Cell Min/Max/Delta)
+- ✅ CAN device discovery for user-configured IDs
+- ✅ Options flow for updating monitored CAN IDs
+- ✅ Fresh connection per BMS request to avoid stale state
 
-**What Doesn't Work:**
-- ❌ COMM_GET_VALUES (0x04) - connection closes immediately
-- ❌ COMM_BMS_GET_VALUES (0x32) - never tested (disconnected)
-- ⏳ COMM_FORWARD_CAN (0x21) - implemented but needs testing
+**BMS Data Format (v0.2.9):**
+- Cell voltages: uint16 big-endian at offset 25, millivolts (÷1000 for V)
+- Cell count: uint8 at offset 24 (typically 20 cells)
+- Balance flags: 20×uint8 starting at offset 65 (one per cell)
+- **Temperature count: uint8 at offset 85** (number of temp sensors)
+- **Temperature values: uint16 big-endian, centidegrees Celsius (÷100 for °C)**
+  - Offset 86: First temp sensor
+  - Offset 88: Second temp sensor
+  - Offset 90: Third temp sensor
 
-**Known Issue**: The old v0.0.6 test code is still running despite v0.0.7 version number. CAN forwarding code ([CAN] logs) not appearing in actual execution.
+**Critical Implementation Details:**
+- Must create fresh TCP connection for each BMS request
+- Must wait 1 second after auth before sending commands
+- Must read for full 3 seconds to capture delayed BMS packet
+- BMS packet is 168 bytes (0xa8), command byte 0x60
+- Sensor data access: `coordinator.data[can_id]["cell_voltages"]` (not `coordinator.data["cell_voltages"]`)
 
 ## VESC Protocol Notes
 
@@ -135,13 +152,30 @@ can_data = bytes([can_id]) + wrapped_cmd
 response = await vesc._send_command(33, can_data)  # COMM_FORWARD_CAN
 ```
 
-## Development Focus
+## Recent Fixes (v0.2.9)
 
-1. **Fix code deployment issue** - v0.0.7 CAN code not executing
-2. **Test CAN forwarding** - Try different CAN IDs (0-253, typical: 124)
-3. **Parse CAN responses** - Handle COMM_FORWARD_CAN response format
-4. **Add CAN device discovery** - Scan for BMS on CAN bus
-5. **User configuration** - Let users select which CAN device's BMS to monitor
+**Cell & Temperature Sensor Data Access Bug:**
+- Problem: Sensors accessed `coordinator.data["cell_voltages"]` directly
+- Solution: Must access via CAN ID: `coordinator.data[0]["cell_voltages"]`
+- Impact: All individual cell and temperature sensors now display values
+
+**Temperature Parsing Correction:**
+- Problem: Dividing by 10 (decidegrees) showed 303.4°C instead of 30.34°C
+- Solution: Divide by 100 (centidegrees) for correct temperature values
+- Also fixed: Now reads temperature count byte before parsing temp values
+
+**Other Fixes:**
+- `OptionsFlowHandler` missing `__init__` method (TypeError on options access)
+- `manifest.py` blocking I/O warning during async context
+- Removed undefined `SERVICE_RESCAN` reference in cleanup code
+
+## Future Development Ideas
+
+1. **State of Charge (SOC) sensor** - Parse SOC data from BMS packet
+2. **State of Health (SOH) sensor** - Parse battery health metrics
+3. **Balance status indicators** - Show which cells are being balanced
+4. **CAN device auto-discovery UI** - Button to scan and add new devices
+5. **Multiple BMS support** - Handle BMS on CAN devices (not just local VESC)
 
 ## License
 
