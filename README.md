@@ -4,6 +4,8 @@
 
 Home Assistant integration for reading Battery Management System (BMS) data from VESC controllers through VESCHub via TCP/IP.
 
+![VESC Hub BMS Integration Screenshot](ha_veschub.png)
+
 ## Features
 
 - **Real-time BMS Monitoring**: Monitor all BMS data from your VESC controller
@@ -72,6 +74,51 @@ Make sure your VESCHub is:
 1. Connected to your VESC controller
 2. Accessible on your network
 3. Configured to accept TCP connections
+
+## Testing Your Connection
+
+Before setting up the integration in Home Assistant, you can test your VESCHub connection locally:
+
+```bash
+# Clone the repository
+git clone https://github.com/radimklaska/ha_veschub
+cd ha_veschub
+
+# Create .env file with your credentials
+cat > .env << EOF
+VESC_ID=your-vesc-id
+VESC_PASSWORD=your-password
+EOF
+
+# Run the proof of concept script
+python3 proof_of_concept.py
+```
+
+The proof of concept script will:
+- Connect to VESCHub and authenticate
+- Send the rapid-fire BMS command sequence
+- Display all cell voltages and battery statistics
+- Verify the connection is working correctly
+
+**Expected output:**
+```
+======================================================================
+BMS DATA SUCCESSFULLY RETRIEVED!
+======================================================================
+
+  Number of Cells:      20
+
+  Cell Voltages:
+    Cell  1: 4.189 V (4189 mV)
+    ...
+
+  Statistics:
+    Average:  4.194 V
+    Minimum:  4.189 V
+    Maximum:  4.197 V
+    Delta:    8.0 mV
+    Balance:  ✓ Excellent
+```
 
 ## Protocol Details
 
@@ -172,6 +219,10 @@ This integration uses:
 - Home Assistant's DataUpdateCoordinator for efficient polling
 - Config Flow for easy setup
 - Entity platform for sensor management
+
+For detailed protocol information and implementation details, see:
+- **TECHNICAL.md** - Complete protocol reference and BMS data access solution
+- **CLAUDE.md** - Development guide and integration architecture
 
 ## Contributing
 

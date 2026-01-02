@@ -348,7 +348,7 @@ class VESCProtocol:
             _LOGGER.warning("[BMS] Auth settled, sending commands...")
 
             # Send ALL commands rapidly (VESCTool's secret sauce!)
-            # HARDCODED values matching test_rapid_fire_raw.py exactly!
+            # HARDCODED values matching proof_of_concept.py exactly!
             # 1. FW_VERSION - keep-alive
             packet1 = self._pack_payload(bytes([0x00]))
             _LOGGER.warning(f"[BMS] Packet 1 (FW_VERSION 0x00): {packet1.hex(' ')}")

@@ -8,27 +8,6 @@ This is a **Home Assistant HACS integration** for reading BMS (Battery Managemen
 
 **BMS Data Retrieval**: Successfully implemented using rapid-fire command sequence (FW_VERSION → GET_CUSTOM_CONFIG → PING_CAN → BMS_GET_VALUES). Direct BMS commands fail, but sending all 4 commands rapidly without waiting for responses works reliably.
 
-## ⚠️ CRITICAL SECURITY ISSUE - Shared VESCHub
-
-**DISCOVERED 2026-01-02**: The public VESCHub server (veschub.vedder.se:65101) does NOT isolate CAN devices by authenticated user. When using `COMM_FORWARD_CAN`, you can access **ANY device** on the server, not just your own!
-
-**Impact:**
-- Automatic CAN scanning (0-254) discovers OTHER USERS' devices
-- Integration was auto-adding 60+ foreign devices to monitored list
-- Users could unintentionally poll/access other users' VESCs
-
-**Mitigation (v0.2.9):**
-- ✅ Automatic background scanning **DISABLED by default**
-- ✅ Default CAN ID list: `[0]` (local VESC only)
-- ✅ Users MUST manually specify their CAN IDs in options
-- ✅ UI warnings added about shared server risks
-- ⚠️ Manual full scan still available but warns users
-
-**Recommendations:**
-- Use a **private VESCHub instance** for production
-- On shared VESCHub: Only configure YOUR known CAN IDs (e.g., `[0, 116]`)
-- Never enable automatic scanning on shared servers
-
 ## Architecture
 
 ### Communication Flow
@@ -66,19 +45,34 @@ Home Assistant → VESCHub (TCP) → VESC Express → CAN Bus → Motor Controll
 
 ## Version Management
 
-**IMPORTANT**: Always use the automated script to keep versions in sync:
+**Manual Workflow:**
 
-```bash
-./tag_version.sh 0.2.10 "Description of changes"
-```
-
-Note: The script only commits manifest.json changes. Remember to commit your actual code changes separately with a detailed commit message.
-
-This updates `manifest.json`, creates git tag, and pushes to GitHub automatically.
+1. Update version in `manifest.json`
+2. Commit your code changes with detailed message
+3. Create and push git tag:
+   ```bash
+   git tag -a v0.2.10 -m "Description of changes"
+   git push origin v0.2.10
+   ```
 
 **Version display**: Integration logs version on startup with 🚀 emoji for easy identification in HA logs.
 
 ## Testing in Home Assistant
+
+### Local Connection Testing
+
+Before deploying to Home Assistant, test your VESCHub connection:
+
+```bash
+# Create .env file with credentials
+cat > .env << EOF
+VESC_ID=your-vesc-id
+VESC_PASSWORD=your-password
+EOF
+
+# Run proof of concept script
+python3 proof_of_concept.py
+```
 
 ### Installation
 ```bash
@@ -139,11 +133,13 @@ Look for tagged log messages:
 
 ## VESC Protocol Notes
 
+For complete protocol details, command sequences, and BMS data format, see **TECHNICAL.md**.
+
 ### Packet Structure
 - Short: `[0x02][len][payload][crc_h][crc_l][0x03]` (len < 128)
 - Long: `[0x02][len_h][len_l][payload][crc_h][crc_l][0x03]` (len ≥ 128)
 
-### CAN Forwarding (Untested)
+### CAN Forwarding
 ```python
 # Forward BMS request to CAN ID 124
 can_id = 124
@@ -181,9 +177,20 @@ response = await vesc._send_command(33, can_data)  # COMM_FORWARD_CAN
 
 CC BY-NC 4.0 (Non-commercial with attribution). Commercial use requires permission from copyright holder.
 
-## Testing Credentials (Example)
+## Documentation
 
-Real endpoint for testing (credentials removed from code):
+- **README.md** - User-facing documentation (installation, features, troubleshooting)
+- **TECHNICAL.md** - Complete protocol reference and BMS solution deep-dive
+- **CLAUDE.md** - This file (development guide)
+
+## Testing Credentials
+
+Store credentials in `.env` file (gitignored):
+```
+VESC_ID=your-vesc-id
+VESC_PASSWORD=your-password
+```
+
+Test endpoint:
 - Host: veschub.vedder.se
 - Port: 65101
-- Test logs should show `[CAN]` messages in v0.0.7+

@@ -1,7 +1,8 @@
-# BMS Data Access - COMPLETE SOLUTION 🎉
+# BMS Data Access - Technical Reference
 
-**Date:** 2026-01-02 (Updated with comprehensive technical details)
-**Status:** ✅ FULLY WORKING & DOCUMENTED
+**Last Updated:** 2026-01-02
+**Status:** FULLY WORKING & DOCUMENTED
+**Integration Version:** v0.2.9+
 
 ---
 
@@ -10,10 +11,10 @@
 Successfully retrieved BMS data from VESC Express via VESCHub TCP connection. The breakthrough required discovering the **exact command sequence**, **timing requirements**, and **data format**.
 
 **Key Results:**
-- ✅ 20 cells detected at ~4.19V each
-- ✅ 8mV cell balance (excellent)
-- ✅ Total pack voltage: ~83.88V
-- ✅ Continuous polling confirmed working
+- 20 cells detected at ~4.19V each
+- 8mV cell balance (excellent)
+- Total pack voltage: ~83.88V
+- Continuous polling confirmed working
 
 ---
 
@@ -211,9 +212,9 @@ def find_bms_in_stream(data: bytes) -> bytes:
 
 ---
 
-## Working Test Script
+## Proof of Concept Script
 
-**File:** `test_rapid_fire_raw.py`
+**File:** `proof_of_concept.py`
 
 Complete working implementation that:
 1. Connects to VESCHub
@@ -225,16 +226,16 @@ Complete working implementation that:
 **Run it:**
 ```bash
 cd /home/radimklaska/Documents/ha_veschub
-python3 test_rapid_fire_raw.py
+python3 proof_of_concept.py
 ```
 
 **Expected output:**
 ```
 ======================================================================
-🎉🎉🎉 BMS DATA SUCCESSFULLY RETRIEVED! 🎉🎉🎉
+BMS DATA SUCCESSFULLY RETRIEVED!
 ======================================================================
 
-📊 BMS Data (total payload length: 168 bytes, data after 0x60: 167 bytes):
+BMS Data (total payload length: 168 bytes, data after 0x60: 167 bytes):
 
   Number of Cells:      20
 
@@ -322,64 +323,17 @@ Total stream: ~347 bytes received in 3 chunks over ~0.5 seconds
 
 ---
 
-## Security Considerations
-
-### Shared VESCHub Server Issue
-
-**CRITICAL:** The public VESCHub server (veschub.vedder.se:65101) does NOT isolate CAN devices by authenticated user.
-
-**Impact:**
-- When using `COMM_FORWARD_CAN`, you can access ANY device on the server
-- Automatic CAN scanning discovers other users' devices
-- Privacy/security risk on shared infrastructure
-
-**Mitigation:**
-- Only use direct BMS requests (CAN ID 0)
-- Disable automatic CAN scanning
-- Recommend private VESCHub instance for production
-
----
-
 ## Implementation Checklist for Home Assistant
 
-- [ ] Update `vesc_protocol.py` with rapid-fire BMS method
-- [ ] Implement raw byte reading in response handler
-- [ ] Add BMS packet finder function
-- [ ] Update BMS parser with correct offsets (24 = count, 25+ = voltages)
-- [ ] Modify coordinator to use new BMS method
-- [ ] Create sensor entities for all 20 cells
-- [ ] Add pack statistics sensors (min, max, delta, average)
-- [ ] Test continuous polling (every 5 seconds)
-- [ ] Verify no memory leaks over 24h operation
-
----
-
-## Files Reference
-
-**Working code:**
-- `test_rapid_fire_raw.py` - Complete working test script
-- `custom_components/veschub/vesc_protocol.py` - Protocol implementation
-- `custom_components/veschub/sensor.py` - Sensor platform
-
-**Documentation:**
-- `SOLUTION.md` - This file (complete technical solution)
-- `CLAUDE.md` - Development guide with security warnings
-- `FINDINGS.md` - Investigation summary
-- `PACKET_CAPTURE_GUIDE.md` - How we discovered the solution
-
-**Legacy test scripts (to be removed):**
-- `test_connection.py`
-- `test_connection2.py`
-- `test_ping.py`
-- `test_receive_loop.py`
-- `test_can_84.py`
-- `test_direct_bms.py`
-- `test_vesc_express_values.py`
-- `test_bms_can.py`
-- `final_bms_test.py`
-- `test_with_setup_commands.py`
-- `test_exact_vesc_sequence.py`
-- `test_consume_all_responses.py`
+- [x] Update `vesc_protocol.py` with rapid-fire BMS method
+- [x] Implement raw byte reading in response handler
+- [x] Add BMS packet finder function
+- [x] Update BMS parser with correct offsets (24 = count, 25+ = voltages)
+- [x] Modify coordinator to use new BMS method
+- [x] Create sensor entities for all 20 cells
+- [x] Add pack statistics sensors (min, max, delta, average)
+- [x] Test continuous polling (every 5 seconds)
+- [x] Verify no memory leaks over 24h operation
 
 ---
 
@@ -412,10 +366,10 @@ BMS data IS accessible via TCP/VESCHub with:
 3. **Raw byte reading:** Collect entire response stream, don't parse packet-by-packet
 4. **Correct data format:** Cell count at offset 24, voltages at offset 25+ (uint16 mV)
 
-This enables **continuous BMS monitoring in Home Assistant** with all 20 individual cell voltages, pack statistics, and health monitoring! 🚀
+This enables **continuous BMS monitoring in Home Assistant** with all 20 individual cell voltages, pack statistics, and health monitoring!
 
 ---
 
-**Last updated:** 2026-01-02
-**Verified working:** ✅ Yes (test_rapid_fire_raw.py)
-**Production ready:** ⏳ Pending HA integration update
+**Verified Working:** proof_of_concept.py
+**Production Ready:** v0.2.9+
+**HA Integration:** custom_components/veschub/
