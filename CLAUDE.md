@@ -114,6 +114,12 @@ Look for tagged log messages:
 - ✅ Options flow for updating monitored CAN IDs
 - ✅ Fresh connection per BMS request to avoid stale state
 
+**Tested Hardware:**
+- ✅ **Floatwheel ADV2** - Primary testing platform
+- ✅ VESC Express with 20S BMS (UART-based)
+- ⏳ **CAN-enabled BMS** - Pending testing with proper CAN BMS
+- ⏳ BMS on CAN bus devices (not direct UART)
+
 **BMS Data Format (v0.2.9):**
 - Cell voltages: uint16 big-endian at offset 25, millivolts (÷1000 for V)
 - Cell count: uint8 at offset 24 (typically 20 cells)

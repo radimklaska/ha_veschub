@@ -260,6 +260,18 @@ Parsed BMS data: {'v_tot': 50.4, 'soc': 85.0, ...}
 - **VESC Firmware**: Firmware with BMS support
 - **VESCHub**: Any VESCHub device with TCP server capability
 
+### Testing Status
+
+**Tested Configuration:**
+- ✅ **Floatwheel ADV2** - Fully tested and working
+- ✅ VESC Express with 20S BMS (UART-based)
+- ✅ VESCHub TCP connection (public and local)
+
+**Pending Testing:**
+- ⏳ **CAN-enabled BMS** - Testing with proper CAN BMS still needs to be done
+- ⏳ Multiple concurrent BMS connections
+- ⏳ BMS on CAN bus devices (not direct UART)
+
 ## Development
 
 This integration uses:
